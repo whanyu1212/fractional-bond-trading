@@ -1,0 +1,21 @@
+{
+  "name": "fractional-bond-trading",
+  "version": "1.0.0",
+  "description": "A proof of concept implementation of a blockchain-based fractional bond trading platform",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.18"
+  },
+  "dependencies": {
+    "ethers": "^6.13.5",
+    "ganache": "^7.9.2",
+    "solc": "^0.8.28"
+  }
+}
