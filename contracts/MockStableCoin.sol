@@ -9,7 +9,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract MockStablecoin is ERC20, Ownable {
     uint8 private _decimals = 6; // USDC has 6 decimals
 
-    constructor() ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {}
+    constructor(
+        string memory name,
+        string memory symbol
+    ) ERC20(name, symbol) Ownable(msg.sender) {}
 
     /**
      * @dev Mint new tokens

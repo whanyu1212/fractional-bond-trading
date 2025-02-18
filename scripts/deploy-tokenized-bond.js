@@ -21,7 +21,7 @@ async function main() {
 
     // Deploy MockStablecoin first
     const MockStablecoin = await ethers.getContractFactory("MockStablecoin");
-    const mockStablecoin = await MockStablecoin.deploy();
+    const mockStablecoin = await MockStablecoin.deploy("Mock USDC", "USDC");
     await mockStablecoin.waitForDeployment();
     
     const mockStablecoinAddress = await mockStablecoin.getAddress();
