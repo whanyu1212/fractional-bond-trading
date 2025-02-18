@@ -54,31 +54,36 @@ async function main() {
     // 1. Mint stablecoins
     const mintAmount = ethers.parseUnits("10000", 6);
     const contractMintAmount = ethers.parseUnits("2000", 6);
+    // Mint to deployer/user
     await mockStablecoin.mint(deployer.address, mintAmount);
+    // Mint to contract
     await mockStablecoin.mint(tokenizedBondAddress, contractMintAmount);
-    console.log("Minted stablecoins to deployer:", ethers.formatUnits(mintAmount, 6), "USDC");
-    console.log("Minted stablecoins to contract:", ethers.formatUnits(contractMintAmount, 6), "USDC");
+    console.log("Deployer/User wallet received:", ethers.formatUnits(mintAmount, 6), "USDC");
+    console.log("Bond contract received:", ethers.formatUnits(contractMintAmount, 6), "USDC");
 
     // 2. Check initial timestamps
     console.log("\n--- Time Check ---");
     const deployTime = await time.latest();
-    console.log("Current blockchain time:", deployTime);
-    console.log("Maturity date:", maturityDate);
-    console.log("Time until maturity:", maturityDate - deployTime, "seconds");
+    // console.log("Current blockchain time:", deployTime);
+    // console.log("Maturity date:", maturityDate);
+    // console.log("Time until maturity:", maturityDate - deployTime, "seconds");
+    console.log("Issue date:", new Date(deployTime * 1000).toLocaleDateString());
+    console.log("Maturity date:", new Date(maturityDate * 1000).toLocaleDateString());
+    console.log("Days until maturity:", Math.floor((maturityDate - deployTime) / (24 * 60 * 60)));
 
     // 3. Purchase bond
+    console.log("\n--- Bond Purchase ---");
     await mockStablecoin.approve(tokenizedBondAddress, bondPrice);
-    console.log("\nApproved bond contract to spend:", ethers.formatUnits(bondPrice, 6), "USDC");
+    console.log("\nApproving payment of:", ethers.formatUnits(bondPrice, 6), "USDC to purchase bond");
     
     try {
         await tokenizedBond.purchaseBond(1);
         console.log("Successfully purchased 1 bond");
-        
         const bondBalance = await tokenizedBond.balanceOf(deployer.address);
-        console.log("Bond balance:", ethers.formatUnits(bondBalance, 18));
+        console.log("Paid:", ethers.formatUnits(bondPrice, 6), "USDC");
     } catch (error) {
-        console.log("Bond purchase failed:", error.message);
-        process.exit(1); // Exit if purchase fails
+        console.log("❌ Bond purchase failed:", error.message);
+        process.exit(1);
     }
 
     // 4. Wait 6 months and claim coupon

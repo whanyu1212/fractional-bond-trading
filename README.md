@@ -59,3 +59,33 @@ npm start
 <br>
 
 <u>Remark:</u> Both the root and the React frontend have their own node_modules folders. Make sure you run ```npm install``` in both locations before starting development.
+
+<br>
+
+#### Implementation Logic
+<details>
+   <summary>Purchase of Bond via Stablecoin</summary>
+
+   ```
+Deployer (User)                 Contracts
++----------------+             +-------------------+
+|                |             | MockStablecoin    |
+| Address:       |             | Address:          |
+| deployer       |             | mockStablecoin    |
+|                |             |                   |
+| Has:           |   pays      | Mints USDC        |
+| - USDC         | --------→   |                   |
+| - Bond Tokens  |   950 USDC  |                   |
++----------------+             +-------------------+
+        ↑                              ↑
+        |                              |
+        |                      +-------------------+
+        |                      | TokenizedBond     |
+        |          mints       | Address:          |
+        +--------------------  | tokenizedBond     |
+           1000 bond tokens    |                   |
+                               | Holds: USDC       |
+                               +-------------------+
+```
+
+</details>
