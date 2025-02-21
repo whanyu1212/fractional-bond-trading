@@ -1,0 +1,206 @@
+/* General Styling */
+body {
+    font-family: "Arial", sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+    color: #333;
+}
+
+/* Container */
+.homepage-container {
+    text-align: center;
+}
+
+/* Hero Section */
+.hero-section {
+    background: linear-gradient(to right, #3b82f6, #4f46e5);
+    color: white;
+    padding: 80px 20px;
+}
+
+.hero-section h1 {
+    font-size: 48px;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.hero-section p {
+    font-size: 20px;
+    max-width: 700px;
+    margin: 0 auto 25px;
+}
+
+/* Buttons */
+.hero-buttons {
+    margin-top: 20px;
+}
+
+.primary-button, .secondary-button {
+    padding: 14px 24px;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 8px;
+    margin: 8px;
+    transition: all 0.3s ease-in-out;
+}
+
+.primary-button {
+    background-color: white;
+    color: #3b82f6;
+    font-weight: bold;
+}
+
+.primary-button:hover {
+    background-color: #e5e5e5;
+}
+
+.secondary-button {
+    background: transparent;
+    border: 2px solid white;
+    color: white;
+    font-weight: bold;
+}
+
+.secondary-button:hover {
+    background-color: white;
+    color: #3b82f6;
+}
+
+/* Section Styling */
+.section {
+    padding: 60px 20px;
+    background-color: white;
+}
+
+.light-bg {
+    background-color: #f9f9f9;
+}
+
+.section h2 {
+    font-size: 32px;
+    margin-bottom: 25px;
+    font-weight: bold;
+}
+
+/* Grid Styling */
+.grid-container {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.grid-item {
+    background: white;
+    padding: 24px;
+    width: 240px;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+}
+
+.grid-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.grid-item h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+/* Why BondChain? Section - Single Row */
+.grid-container.single-line {
+    display: flex;
+    flex-wrap: nowrap;  /* Keep items in one row */
+    justify-content: center;
+    gap: 20px;
+    overflow-x: auto; /* Enable horizontal scrolling if necessary */
+    padding: 10px 0;
+    scrollbar-width: thin; 
+    scrollbar-color: #3b82f6 transparent;
+}
+
+/* Call to Action */
+.cta-button {
+    background-color: #3b82f6;
+    color: white;
+    padding: 16px 32px;
+    font-size: 20px;
+    border: none;
+    cursor: pointer;
+    border-radius: 8px;
+    font-weight: bold;
+    transition: all 0.3s ease-in-out;
+}
+
+.cta-button:hover {
+    background-color: #2563eb;
+    transform: scale(1.05);
+}
+
+/* Footer */
+.footer {
+    background-color: #1f2937;
+    color: white;
+    padding: 25px;
+    font-size: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .hero-section h1 {
+        font-size: 40px;
+    }
+
+    .hero-section p {
+        font-size: 18px;
+    }
+
+    .primary-button, .secondary-button {
+        font-size: 16px;
+        padding: 12px 20px;
+    }
+
+    .grid-container.single-line {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero-section {
+        padding: 60px 15px;
+    }
+
+    .hero-section h1 {
+        font-size: 36px;
+    }
+
+    .hero-section p {
+        font-size: 16px;
+    }
+
+    .grid-item {
+        width: 100%;
+    }
+
+    .grid-container.single-line {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-section h1 {
+        font-size: 30px;
+    }
+
+    .primary-button, .secondary-button, .cta-button {
+        font-size: 14px;
+        padding: 10px 18px;
+    }
+}
