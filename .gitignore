@@ -53,3 +53,6 @@ build/
 # Other Files
 # Lock.js
 # Lock.sol
+
+# add pycache
+__pycache__/
