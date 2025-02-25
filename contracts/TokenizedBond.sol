@@ -232,10 +232,18 @@ contract TokenizedBond is ERC20, Ownable {
      * @return Whether the transfer is allowed
      */
     function canTransfer(address from, address to) public view returns (bool) {
-        // Basic rules:
-        // 1. Both addresses must be whitelisted
-        // 2. Both addresses must have passed KYC
-        // 3. Transfer cannot happen after maturity (unless it's redemption)
+        // Allow transfers to the contract itself for redemption after maturity
+        if (block.timestamp >= maturityDate) {
+            // After maturity, only allow transfers to the contract itself (for redemption)
+            return
+                to == address(this) &&
+                whitelist[from] &&
+                whitelist[to] &&
+                kycApproved[from] &&
+                kycApproved[to];
+        }
+
+        // Before maturity, check regular transfer conditions
         return
             whitelist[from] &&
             whitelist[to] &&
@@ -276,7 +284,7 @@ contract TokenizedBond is ERC20, Ownable {
             "Too early"
         );
 
-            // Calculate semi-annual coupon (annual rate divided by frequency)
+        // Calculate semi-annual coupon (annual rate divided by frequency)
         uint256 couponAmount = (balanceOf(msg.sender) *
             faceValue *
             couponRate) / (10000 * tokensPerBond * couponFrequency);
