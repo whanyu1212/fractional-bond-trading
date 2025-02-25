@@ -133,7 +133,7 @@ contract BondMarketPlace {
         }
 
         // Call the function in the bond contract to purchase the bond
-        bond.purchaseBond(msg.sender, amount);
+        bond.purchaseBondFor(msg.sender, amount);
 
         emit BondPurchaseRecorded(bondId, msg.sender, amount);
     }

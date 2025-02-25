@@ -16,7 +16,7 @@ async function main() {
     const maxBondSupply = ethers.parseUnits("1000000", 6); // 1,000,000 bonds
 
     // Get signer for issuer address
-    const [deployer] = await ethers.getSigners();
+    const [deployer, user1, user2] = await ethers.getSigners();
     const issuerAddress = await deployer.getAddress();
 
     // Deploy MockStablecoin first
@@ -52,10 +52,11 @@ async function main() {
     console.log("\n--- Testing Bond Functions ---");
 
     // 1. Mint stablecoins
-    const mintAmount = ethers.parseUnits("10000", 6);
+    const mintAmount = ethers.parseUnits("10000", 6); // Mint an ample amount
     const contractMintAmount = ethers.parseUnits("2000", 6);
     // Mint to deployer/user
     await mockStablecoin.mint(deployer.address, mintAmount);
+    await mockStablecoin.mint(user1.address, mintAmount); // Mint to user1
     // Mint to contract
     await mockStablecoin.mint(tokenizedBondAddress, contractMintAmount);
     console.log("Deployer/User wallet received:", ethers.formatUnits(mintAmount, 6), "USDC");
@@ -72,14 +73,19 @@ async function main() {
     console.log("Days until maturity:", Math.floor((maturityDate - deployTime) / (24 * 60 * 60)));
 
     // 3. Purchase bond
+    // 3. Purchase bond
     console.log("\n--- Bond Purchase ---");
-    await mockStablecoin.approve(tokenizedBondAddress, bondPrice);
+
+    // User 1 approves the bond contract to spend their stablecoins
+    await mockStablecoin.connect(user1).approve(tokenizedBondAddress, bondPrice);
+    console.log(`User1 approved ${ethers.formatUnits(bondPrice, 6)} USDC for bond purchase`);
+
     console.log("\nApproving payment of:", ethers.formatUnits(bondPrice, 6), "USDC to purchase bond");
     
     try {
-        await tokenizedBond.purchaseBond(1);
+        await tokenizedBond.connect(user1).purchaseBondFor(user1.address, 1);
         console.log("Successfully purchased 1 bond");
-        const bondBalance = await tokenizedBond.balanceOf(deployer.address);
+        const bondBalance = await tokenizedBond.balanceOf(user1.address);
         console.log("Paid:", ethers.formatUnits(bondPrice, 6), "USDC");
     } catch (error) {
         console.log("❌ Bond purchase failed:", error.message);
@@ -90,10 +96,10 @@ async function main() {
     console.log("\nAdvancing time by 6 months...");
     await time.increase(180 * 24 * 60 * 60);
     try {
-        await tokenizedBond.claimCoupon();
+        await tokenizedBond.claimCouponFor(user1.address);
         console.log("Claimed coupon successfully");
         
-        const stablecoinBalance = await mockStablecoin.balanceOf(deployer.address);
+        const stablecoinBalance = await mockStablecoin.balanceOf(user1.address);
         console.log("Stablecoin balance after coupon:", ethers.formatUnits(stablecoinBalance, 6), "USDC");
     } catch (error) {
         console.log("Coupon claim failed:", error.message);
@@ -103,10 +109,10 @@ async function main() {
     console.log("\nAdvancing time by another 6 months...");
     await time.increase(185 * 24 * 60 * 60);
     try {
-        await tokenizedBond.redeem();
+        await tokenizedBond.redeemFor(user1.address);
         console.log("Redeemed bond successfully");
         
-        const finalBalance = await mockStablecoin.balanceOf(deployer.address);
+        const finalBalance = await mockStablecoin.balanceOf(user1.address);
         console.log("Final stablecoin balance:", ethers.formatUnits(finalBalance, 6), "USDC");
     } catch (error) {
         console.log("Bond redemption failed:", error.message);
