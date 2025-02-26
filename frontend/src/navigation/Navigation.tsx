@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 
 // Pages
 import Homepage from "../components/Widgets/Homepage/Homepage";
+import LearnMore from "../components/Widgets/Homepage/LearnMore"; // Import LearnMore page
 import MarketScreen from "../screens/Market/MarketScreen";
 import SigninScreen from "../screens/Members/SigninScreen";
 import SignupScreen from "../screens/Members/SignupScreen";
@@ -15,6 +16,7 @@ import Wallet from "../screens/Wallet/Wallet";
 const Navigation: React.FC = () => (
   <Routes>
     <Route path="/" element={<Homepage />} />
+    <Route path="/learn-more" element={<LearnMore />} /> {/* Add Learn More route */}
     <Route path="/signin" element={<SigninScreen />} />
     <Route path="/signup" element={<SignupScreen />} />
     <Route path="/market" element={<MarketScreen />} />

@@ -10,19 +10,22 @@ const Homepage: React.FC = () => {
       {/* Hero Section */}
       <header className="hero-section">
         <h1>BondChain</h1>
-        <p>A Blockchain-Based Platform for Fractional Bond Trading</p>
+        <p>
+          Invest in fractional bonds through blockchain technology. Join our
+          community to access institutional-grade bonds with as little as $100.
+        </p>
         <div className="hero-buttons">
           <button className="primary-button" onClick={() => navigate("/signin")}>
             <i className="fas fa-play-circle"></i> Start Investing
           </button>
-          <button className="secondary-button">
+          <button className="secondary-button" onClick={() => navigate("/learn-more")}>
             <i className="fas fa-info-circle"></i> Learn More
           </button>
         </div>
       </header>
 
       {/* Why BondChain? */}
-      <section className="section">
+      <section className="section" id="why-bondchain">
         <h2>Why BondChain?</h2>
         <div className="grid-container single-line">
           {[
