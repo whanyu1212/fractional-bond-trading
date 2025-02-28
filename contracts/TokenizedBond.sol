@@ -22,6 +22,12 @@ contract TokenizedBond is ERC20, Ownable {
     // using means that the functions from SafeERC20 can be called directly
     using SafeERC20 for IERC20;
 
+    // Document URI for legal documentation
+    string public documentURI;
+
+    // Add a state variable to store document hash
+    bytes32 public documentHash;
+
     //-------------------- Bond Details ------------------------------------//
 
     // Unique identifier or name for the bond
@@ -52,15 +58,33 @@ contract TokenizedBond is ERC20, Ownable {
     // e.g., USDC, USDT, DAI etc.
     IERC20 public stablecoin;
 
+    // Security related state variables
+
+    // Whitelist of addresses allowed to hold tokens
+    mapping(address => bool) public whitelist;
+
+    // Track if an address has passed KYC
+    mapping(address => bool) public kycApproved;
+
     //-------------------- Events ------------------------------------//
     event BondMinted(
         address indexed to,
         uint256 bondAmount,
         uint256 tokenAmount
     );
+    // Events for bond purchase, coupon payment, and bond redemption
     event BondPurchased(address indexed buyer, uint256 bondAmount);
     event CouponPaid(address indexed claimer, uint256 couponAmount);
     event BondRedeemed(address indexed redeemer, uint256 redemptionAmount);
+
+    // Events for compliance tracking
+    event DocumentUpdated(string documentURI);
+    event AddedToWhitelist(address indexed account);
+    event RemovedFromWhitelist(address indexed account);
+    event KycStatusChanged(address indexed account, bool approved);
+
+    // Add an event for document hash updates
+    event DocumentHashUpdated(bytes32 indexed documentHash);
 
     //-------------------- Fractionalization ------------------------------------//
 
@@ -139,6 +163,94 @@ contract TokenizedBond is ERC20, Ownable {
         emit BondMinted(to, bondAmount, tokenAmount);
     }
 
+    /**
+     * @notice Set the document URI for legal documentation
+     * @param _documentURI The URI pointing to the legal documents
+     */
+    function setDocumentURI(string calldata _documentURI) external onlyOwner {
+        documentURI = _documentURI;
+        emit DocumentUpdated(_documentURI);
+    }
+
+    // Add a function to set the document hash
+    function setDocumentHash(bytes32 _documentHash) external onlyOwner {
+        documentHash = _documentHash;
+        emit DocumentHashUpdated(_documentHash);
+    }
+
+    // Optionally add a function to verify a document's content matches the stored hash
+    function verifyDocument(
+        string calldata documentContent
+    ) external view returns (bool) {
+        bytes32 calculatedHash = keccak256(abi.encodePacked(documentContent));
+        return calculatedHash == documentHash;
+    }
+
+    /**
+     * @notice Add addresses to the transfer whitelist
+     * @param accounts Array of addresses to whitelist
+     */
+    function addToWhitelist(address[] calldata accounts) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            whitelist[accounts[i]] = true;
+            emit AddedToWhitelist(accounts[i]);
+        }
+    }
+
+    /**
+     * @notice Remove addresses from the transfer whitelist
+     * @param accounts Array of addresses to remove from the whitelist
+     */
+    function removeFromWhitelist(
+        address[] calldata accounts
+    ) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            whitelist[accounts[i]] = false;
+            emit RemovedFromWhitelist(accounts[i]);
+        }
+    }
+
+    /**
+     * @notice Set KYC status for accounts
+     * @param accounts Array of addresses to update
+     * @param approved KYC approval status
+     */
+    function setKycStatus(
+        address[] calldata accounts,
+        bool approved
+    ) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            kycApproved[accounts[i]] = approved;
+            emit KycStatusChanged(accounts[i], approved);
+        }
+    }
+
+    /**
+     * @notice Check if a transfer is allowed
+     * @param from Sender address
+     * @param to Recipient address
+     * @return Whether the transfer is allowed
+     */
+    function canTransfer(address from, address to) public view returns (bool) {
+        // Allow transfers to the contract itself for redemption after maturity
+        if (block.timestamp >= maturityDate) {
+            // After maturity, only allow transfers to the contract itself (for redemption)
+            return
+                to == address(this) &&
+                whitelist[from] &&
+                whitelist[to] &&
+                kycApproved[from] &&
+                kycApproved[to];
+        }
+
+        // Before maturity, check regular transfer conditions
+        return
+            whitelist[from] &&
+            whitelist[to] &&
+            kycApproved[from] &&
+            kycApproved[to];
+    }
+
     //-------------------- Do not use the following with Marketplace ------------------------------------//
     // These cannot be used together with the marketplace as the msg.sender will be the marketplace contract
     // and not the buyer. The stablecoins will not be debited correctly.
@@ -202,7 +314,7 @@ contract TokenizedBond is ERC20, Ownable {
      * @param buyer The address of the buyer purchasing the bonds
      * @param bondAmount Number of bonds to purchase
      */
-    function purchaseBond(address buyer, uint256 bondAmount) external {
+    function purchaseBondFor(address buyer, uint256 bondAmount) external {
         require(block.timestamp < maturityDate, "Bond no longer for sale");
         uint256 totalPrice = bondAmount * bondPrice;
         require(

@@ -75,7 +75,7 @@ interface ITokenizedBond is IERC20 {
      * @notice Purchase a bond by sending stablecoin to the contract
      * @param bondAmount Number of bonds to purchase
      */
-    function purchaseBond(address buyer, uint256 bondAmount) external;
+    function purchaseBondFor(address buyer, uint256 bondAmount) external;
 
     /**
      * @notice Claim coupon payments for the bond

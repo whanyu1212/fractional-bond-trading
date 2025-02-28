@@ -19,7 +19,7 @@ The repository contains two main parts:
    Located at the repository root. This part uses Hardhat for blockchain development.
 
 2. **React Frontend:**  
-   Located in the `interface` folder. This part is a React application created with Create React App.
+   Located in the `frontend` folder. This part is a React application created with Create React App.
 
 #### Installation
 
@@ -38,7 +38,7 @@ npm install
 
 For the React Frontend:
 ```bash
-cd interface
+cd frontend
 npm install
 cd ..
 ```
@@ -53,7 +53,7 @@ npx hardhat test
 
 **2. Running the React Frontend**
 ```bash
-cd interface
+cd frontend
 npm start
 ```
 <br>
@@ -62,30 +62,3 @@ npm start
 
 <br>
 
-#### Implementation Logic
-<details>
-   <summary>Purchase of Bond via Stablecoin</summary>
-
-   ```
-Deployer (User)                 Contracts
-+----------------+             +-------------------+
-|                |             | MockStablecoin    |
-| Address:       |             | Address:          |
-| deployer       |             | mockStablecoin    |
-|                |             |                   |
-| Has:           |   pays      | Mints USDC        |
-| - USDC         | --------→   |                   |
-| - Bond Tokens  |   950 USDC  |                   |
-+----------------+             +-------------------+
-        ↑                              ↑
-        |                              |
-        |                      +-------------------+
-        |                      | TokenizedBond     |
-        |          mints       | Address:          |
-        +--------------------  | tokenizedBond     |
-           1000 bond tokens    |                   |
-                               | Holds: USDC       |
-                               +-------------------+
-```
-
-</details>
