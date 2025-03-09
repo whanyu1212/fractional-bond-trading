@@ -133,6 +133,15 @@ contract TokenizedBond is ERC20, Ownable {
         stablecoin = IERC20(_stablecoinAddress);
     }
 
+    // Add this function after the constructor and before mintBond function
+    /**
+     * @notice Get all bond information
+     * @return BondInfo struct containing all bond details
+     */
+    function getBondInfo() external view returns (BondInfo memory) {
+        return bondInfo;
+    }
+
     /**
      * @notice Mint new bonds to the specified address (in this case, we need to supply to the market)
      * @param to The address to which the new bonds will be minted
