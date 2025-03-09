@@ -2,10 +2,12 @@ const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 async function main() {
-    // Get the current timestamp
     const currentTimestamp = await time.latest();
     
-    // Synthetic values
+    // Synthetic values for the bondInfo struct
+    const bondName = "Test Bond";
+    const bondSymbol = "TBOND";
+    const bondId = 1;
     const faceValue = ethers.parseUnits("1000", 6);  // 1000 USDC (6 decimals)
     const couponRate = 500;  // 5.00% (in basis points)
     const couponFrequency = 2;  // Semi-annual payments
@@ -13,13 +15,14 @@ async function main() {
     const tokensPerBond = ethers.parseUnits("1000", 18);  // 1000 tokens per bond
     const bondPrice = ethers.parseUnits("950", 6);  // 950 USDC (slight discount)
     const maxBondSupply = ethers.parseUnits("1000000", 6); // 1,000,000 bonds
-    const bondAmount = 10; // Number of bonds to mint
+
+    const bondAmount = 10; // Number of bonds to mint and list
 
     // Get signer for issuer address
     const [deployer] = await ethers.getSigners();
     const issuerAddress = await deployer.getAddress();
 
-    // Deploy MockStablecoin first
+    // Deploy MockStablecoin first (The deployer has ownership)
     const MockStablecoin = await ethers.getContractFactory("MockStablecoin");
     const mockStablecoin = await MockStablecoin.deploy("Mock USDC", "USDC");
     await mockStablecoin.waitForDeployment();
@@ -27,25 +30,30 @@ async function main() {
     const mockStablecoinAddress = await mockStablecoin.getAddress();
     console.log("MockStablecoin deployed to:", mockStablecoinAddress);
 
-    // Then deploy TokenizedBond using the mock address
+    // Then deploy TokenizedBond (The deployer has ownership)
     const TokenizedBond = await ethers.getContractFactory("TokenizedBond");
     const tokenizedBond = await TokenizedBond.deploy(
-        "Test Bond",
-        "TBOND",
-        faceValue,
-        couponRate,
-        couponFrequency,
-        maturityDate,
-        issuerAddress,
-        mockStablecoinAddress,
-        tokensPerBond,
-        bondPrice,
-        maxBondSupply
+        bondName,              // _name (1st)
+        bondSymbol,            // _symbol (2nd)
+        bondId,                // _id (3rd)
+        faceValue,             // _faceValue (4th)
+        couponRate,            // _couponRate (5th)
+        couponFrequency,       // _couponFrequency (6th)
+        maturityDate,          // _maturityDate (7th)
+        issuerAddress,         // _issuer (8th) - this was missing!
+        mockStablecoinAddress, // _stablecoinAddress (9th)
+        tokensPerBond,         // _tokensPerBond (10th)
+        bondPrice,             // _bondPrice (11th)
+        maxBondSupply          // _maxBondSupply (12th)
     );
 
     await tokenizedBond.waitForDeployment();
     const tokenizedBondAddress = await tokenizedBond.getAddress();
-    console.log("TokenizedBond deployed to:", tokenizedBondAddress);
+    console.log("TBOND deployed to:", tokenizedBondAddress);
+
+    const bondInfo = await tokenizedBond.bondInfo();
+    const fractionInfo = await tokenizedBond.fractionInfo();
+
 
     // Deploy BondMarketplace
     const BondMarketplace = await ethers.getContractFactory("BondMarketPlace");
@@ -90,22 +98,20 @@ async function main() {
     console.log(`Minted ${bondAmount} bonds to marketplace at ${bondMarketplaceAddress}`);
 
     console.log("\n--- Listing Bonds on Marketplace ---");
-    const listingPrice = ethers.parseUnits("975", 6); // 975 USDC per bond
-    const bondId = 1; // First bond listing
     
     // Approve marketplace to handle bonds
     await tokenizedBond.approve(bondMarketplaceAddress, BigInt(bondAmount) * tokensPerBond);
     
     // List the bonds with correct parameter order
     await bondMarketplace.listBond(
-        bondId,                  // unique identifier for the bond listing
-        tokenizedBondAddress,    // bond token contract address
-        listingPrice            // price per bond
+        bondInfo.bondId,            // bondId - correct
+        tokenizedBondAddress,       // bondAddress - this should be the contract address, not the issuer!
+        fractionInfo.bondPrice      // price - correct
     );
-    console.log(`Listed bond ID ${bondId} at ${ethers.formatUnits(listingPrice, 6)} USDC each`);
+    console.log(`Listed bond ID ${bondInfo.bondId} at ${ethers.formatUnits(fractionInfo.bondPrice, 6)} USDC each`);
 
     // Verify listing using bondId
-    const [issuer, price, listingTime, isMatured, totalHolders] = await bondMarketplace.getBondInfo(bondId);
+    const [issuer, price, listingTime, isMatured, totalHolders] = await bondMarketplace.getBondInfo(bondInfo.bondId);
     console.log("\n--- Listing Details ---");
     console.log("Bond ID:", bondId);
     console.log("Issuer:", issuer);
@@ -121,6 +127,8 @@ async function main() {
     // Get a buyer account
     const [_, buyer] = await ethers.getSigners();
     console.log("Buyer address:", await buyer.getAddress());
+
+    const listingPrice = price;
     
     // Mint USDC to buyer
     const purchaseAmount = 2; // Number of bonds to purchase
@@ -128,18 +136,22 @@ async function main() {
     await mockStablecoin.mint(buyer.getAddress(), totalPrice);
     console.log("Buyer received:", ethers.formatUnits(totalPrice, 6), "USDC");
     
-    // Approve USDC spending for marketplace contract (not the bond contract)
+    // Approve USDC spending for the bond contract
+    // This is correct - the TokenizedBond contract will actually move the tokens
     await mockStablecoin.connect(buyer).approve(tokenizedBondAddress, totalPrice);
     console.log("Approved USDC spending for tokenized bond contract");
 
+    // Now also approve the bond contract to transfer tokens on behalf of the marketplace 
+    // (The marketplace needs to be approved to spend bond tokens)
+    await tokenizedBond.connect(deployer).approve(bondMarketplaceAddress, BigInt(bondAmount) * tokensPerBond);
+    console.log("Approved bond token spending for marketplace contract");
+
     const allowance = await mockStablecoin.allowance(buyer.getAddress(), tokenizedBondAddress);
-    console.log("Allowance set by buyer:", allowance.toString());
-    
+    console.log("USDC Allowance set by buyer:", allowance.toString());
+        
     // Purchase bonds through marketplace
-    await bondMarketplace.connect(buyer).purchaseBond(bondId, purchaseAmount);
+    await bondMarketplace.connect(buyer).purchaseBond(bondInfo.bondId, purchaseAmount);
     console.log(`Purchased ${purchaseAmount} bonds at ${ethers.formatUnits(listingPrice, 6)} USDC each`);
-    console.log("Buyer's bond balance:", await tokenizedBond.balanceOf(await buyer.getAddress()));
-    console.log("Buyer's stablecoin balance:", ethers.formatUnits(await mockStablecoin.balanceOf(await buyer.getAddress()), 6));
 
     // Test coupon claim and bond redemption
     console.log("\n--- Testing Coupon Payout ---");
@@ -148,24 +160,29 @@ async function main() {
     await time.increase(secondsToIncrease);
     console.log(`Time increased by ${secondsToIncrease} seconds`);
 
-    // Have the buyer claim the coupon directly on the tokenized bond contract (or via marketplace if implemented)
-    await tokenizedBond.connect(buyer).claimCoupon();
-    console.log("Buyer claimed coupon");
+    // Claim the coupon through the marketplace instead of directly
+    await bondMarketplace.connect(buyer).claimCoupon(bondInfo.bondId);
+    console.log(`Buyer claimed coupon for bond ID ${bondInfo.bondId} through marketplace`);
 
     // Check buyer's stablecoin balance after coupon claim
-    const buyerBalanceAfterClaim = await mockStablecoin.balanceOf(await buyer.getAddress());
+    const buyerBalanceAfterClaim = await mockStablecoin.balanceOf(buyer.getAddress());
     console.log("Buyer's stablecoin balance after coupon claim:", ethers.formatUnits(buyerBalanceAfterClaim, 6));
 
     console.log("\n--- Testing Redemption ---");
     // Fast-forward time until maturity (add an extra second for safety)
     const currentTimeAfterCoupon = await time.latest();
-    const secondsToMaturity = maturityDate - currentTimeAfterCoupon + 1;
-    await time.increase(secondsToMaturity);
-    console.log(`Time increased by ${secondsToMaturity} seconds to reach maturity`);
+    const secondsUntilMaturity = Number(maturityDate) - currentTimeAfterCoupon + 10;
+    console.log(`Time increased by ${secondsUntilMaturity} seconds to reach maturity`);
+    await time.increase(secondsUntilMaturity);
 
-    // Have the buyer redeem the bond via the marketplace
-    await bondMarketplace.connect(buyer).redeemBond(bondId);
-    console.log("Buyer redeemed bond via marketplace");
+    // Update the bond to matured status in the marketplace
+    // Either create a function in the marketplace contract to update maturity:
+    await bondMarketplace.updateBondMaturity(bondInfo.bondId, true);
+    console.log("Updated bond maturity status to true");
+
+    // Now redemption should work
+    await bondMarketplace.connect(buyer).redeemBond(bondInfo.bondId);
+    console.log(`Buyer redeemed bond ID ${bondInfo.bondId}`);
 
     // check buyer's stablecoin balance after redemption
     const buyerBalanceAfterRedemption = await mockStablecoin.balanceOf(await buyer.getAddress());
