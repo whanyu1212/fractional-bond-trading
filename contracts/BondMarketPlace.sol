@@ -160,12 +160,12 @@ contract BondMarketPlace is Ownable {
         analytics.historicalPrices.push(listing.listingPrice);
         analytics.tradingTimes.push(block.timestamp);
         analytics.numberOfTrades++;
-        analytics.totalTradingVolume += amount;
+        analytics.totalTradingVolume += amount * listing.listingPrice;
         analytics.holderBalances[msg.sender] += amount;
 
         // Update global statistics
-        totalTradingVolume += amount;
-        userTradingVolume[msg.sender] += amount;
+        totalTradingVolume += amount * listing.listingPrice;
+        userTradingVolume[msg.sender] += amount * listing.listingPrice;
 
         // Call the function in the bond contract to purchase the bond
         listing.bondContract.purchaseBondFor(msg.sender, amount);
