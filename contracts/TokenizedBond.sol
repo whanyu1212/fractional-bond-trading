@@ -284,6 +284,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param bondAmount Number of bonds to purchase
      */
     function purchaseBondFor(address buyer, uint256 bondAmount) external {
+        require(whitelist[buyer], "Buyer not whitelisted");
+        require(kycApproved[buyer], "Buyer not KYC approved");
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond no longer for sale"
@@ -305,6 +307,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param claimer The address for which to claim coupon payments.
      */
     function claimCouponFor(address claimer) external {
+        require(whitelist[claimer], "Claimer not whitelisted");
+        require(kycApproved[claimer], "Claimer not KYC approved");
         require(balanceOf(claimer) > 0, "No bonds held");
         require(
             block.timestamp >=
@@ -327,6 +331,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param redeemer The address to which the redemption amount will be transferred
      */
     function redeemFor(address redeemer) external {
+        require(whitelist[redeemer], "Redeemer not whitelisted");
+        require(kycApproved[redeemer], "Redeemer not KYC approved");
         require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
         uint256 bondTokens = balanceOf(redeemer);
         require(bondTokens > 0, "No bonds to redeem");
