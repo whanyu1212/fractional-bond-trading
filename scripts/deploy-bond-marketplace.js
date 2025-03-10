@@ -16,7 +16,8 @@ async function main() {
     const bondPrice = ethers.parseUnits("950", 6);  // 950 USDC (slight discount)
     const maxBondSupply = ethers.parseUnits("1000000", 6); // 1,000,000 bonds
 
-    const bondAmount = 10; // Number of bonds to mint and list
+    // Number of bonds to mint and list on the marketplace by the issuer
+    const bondAmount = 10; 
 
     // Get signer for issuer address
     const [deployer] = await ethers.getSigners();
@@ -51,11 +52,12 @@ async function main() {
     const tokenizedBondAddress = await tokenizedBond.getAddress();
     console.log("TBOND deployed to:", tokenizedBondAddress);
 
+    // public structs in TokenizedBond contract
     const bondInfo = await tokenizedBond.bondInfo();
     const fractionInfo = await tokenizedBond.fractionInfo();
 
 
-    // Deploy BondMarketplace
+    // Deploy BondMarketplace (The deployer has ownership)
     const BondMarketplace = await ethers.getContractFactory("BondMarketPlace");
     const bondMarketplace = await BondMarketplace.deploy();
     await bondMarketplace.waitForDeployment();
@@ -65,10 +67,15 @@ async function main() {
     console.log("\n--- Testing Bond Functions ---");
 
     // Calculate required reserves for future payments
+
+    // Number of coupons to pay until maturity
     const remainingCoupons = Math.floor(((maturityDate - currentTimestamp) * couponFrequency) / (365 * 24 * 60 * 60));
+    // Calculate the total required amount for payout for each bond
     const couponPaymentPerBond = (faceValue * BigInt(couponRate) * BigInt(remainingCoupons)) / (BigInt(10000) * BigInt(couponFrequency));
     const principalPerBond = faceValue;
+    // Total required amount (principal + coupon payments) for the bond
     const totalRequiredPerBond = couponPaymentPerBond + principalPerBond;
+    // We minted 10 bonds, so multiply by the bond amount
     const totalRequired = totalRequiredPerBond * BigInt(bondAmount);
 
     // Add 10% buffer for safety
@@ -89,7 +96,9 @@ async function main() {
     console.log("\n--- Time Check ---");
     const deployTime = await time.latest();
     console.log("Issue date:", new Date(deployTime * 1000).toLocaleDateString());
-    console.log("Maturity date:", new Date(maturityDate * 1000).toLocaleDateString());
+    // console.log("Maturity date:", new Date(bondInfo.maturityDate * 1000).toLocaleDateString());
+    // Fix for TypeError: Cannot mix BigInt and other types
+    console.log("Maturity date:", new Date(Number(bondInfo.maturityDate) * 1000).toLocaleDateString());
     console.log("Days until maturity:", Math.floor((maturityDate - deployTime) / (24 * 60 * 60)));
 
     // Mint bonds to marketplace
@@ -102,11 +111,10 @@ async function main() {
     // Approve marketplace to handle bonds
     await tokenizedBond.approve(bondMarketplaceAddress, BigInt(bondAmount) * tokensPerBond);
     
-    // List the bonds with correct parameter order
     await bondMarketplace.listBond(
-        bondInfo.bondId,            // bondId - correct
-        tokenizedBondAddress,       // bondAddress - this should be the contract address, not the issuer!
-        fractionInfo.bondPrice      // price - correct
+        bondInfo.bondId,            // bondId 
+        tokenizedBondAddress,       // bondAddress - not the issuer/deployer address
+        fractionInfo.bondPrice      // price 
     );
     console.log(`Listed bond ID ${bondInfo.bondId} at ${ethers.formatUnits(fractionInfo.bondPrice, 6)} USDC each`);
 
@@ -137,14 +145,19 @@ async function main() {
     console.log("Buyer received:", ethers.formatUnits(totalPrice, 6), "USDC");
     
     // Approve USDC spending for the bond contract
-    // This is correct - the TokenizedBond contract will actually move the tokens
+    // Since the tokenizedbond requires whitelisting and kyc approval
+    // we need to add the buyer to the whitelist and approve KYC
+    // (This is a simplified version of a real KYC process)
+    await tokenizedBond.connect(deployer).addToWhitelist([buyer.getAddress()]);
+    await tokenizedBond.connect(deployer).setKycStatus([buyer.getAddress()], true);
+    console.log("✅ Buyer added to whitelist and KYC approved by deployer");
     await mockStablecoin.connect(buyer).approve(tokenizedBondAddress, totalPrice);
-    console.log("Approved USDC spending for tokenized bond contract");
+    console.log("✅ Approved USDC spending for tokenized bond contract");
 
     // Now also approve the bond contract to transfer tokens on behalf of the marketplace 
     // (The marketplace needs to be approved to spend bond tokens)
     await tokenizedBond.connect(deployer).approve(bondMarketplaceAddress, BigInt(bondAmount) * tokensPerBond);
-    console.log("Approved bond token spending for marketplace contract");
+    console.log("✅ Approved bond token spending for marketplace contract");
 
     const allowance = await mockStablecoin.allowance(buyer.getAddress(), tokenizedBondAddress);
     console.log("USDC Allowance set by buyer:", allowance.toString());
@@ -156,20 +169,20 @@ async function main() {
     // Test coupon claim and bond redemption
     console.log("\n--- Testing Coupon Payout ---");
     // Fast-forward time by one coupon period (e.g. semi-annual: 365 days / couponFrequency)
-    const secondsToIncrease = Math.floor(365 * 24 * 60 * 60 / couponFrequency) + 1;
+    const secondsToIncrease = Math.floor(185 * 24 * 60 * 60 / couponFrequency) + 1;
     await time.increase(secondsToIncrease);
     console.log(`Time increased by ${secondsToIncrease} seconds`);
 
     // Claim the coupon through the marketplace instead of directly
     await bondMarketplace.connect(buyer).claimCoupon(bondInfo.bondId);
-    console.log(`Buyer claimed coupon for bond ID ${bondInfo.bondId} through marketplace`);
+    console.log(`✅ Buyer claimed coupon for bond ID ${bondInfo.bondId} through marketplace`);
 
     // Check buyer's stablecoin balance after coupon claim
     const buyerBalanceAfterClaim = await mockStablecoin.balanceOf(buyer.getAddress());
     console.log("Buyer's stablecoin balance after coupon claim:", ethers.formatUnits(buyerBalanceAfterClaim, 6));
 
     console.log("\n--- Testing Redemption ---");
-    // Fast-forward time until maturity (add an extra second for safety)
+    // Fast-forward time until maturity
     const currentTimeAfterCoupon = await time.latest();
     const secondsUntilMaturity = Number(maturityDate) - currentTimeAfterCoupon + 10;
     console.log(`Time increased by ${secondsUntilMaturity} seconds to reach maturity`);
@@ -182,11 +195,42 @@ async function main() {
 
     // Now redemption should work
     await bondMarketplace.connect(buyer).redeemBond(bondInfo.bondId);
-    console.log(`Buyer redeemed bond ID ${bondInfo.bondId}`);
+    console.log(`✅ Buyer redeemed bond ID ${bondInfo.bondId}`);
 
     // check buyer's stablecoin balance after redemption
     const buyerBalanceAfterRedemption = await mockStablecoin.balanceOf(await buyer.getAddress());
     console.log("Buyer's stablecoin balance after redemption:", ethers.formatUnits(buyerBalanceAfterRedemption, 6));
+
+    // Test market analytics functionality
+    console.log("\n--- Testing Market Analytics ---");
+    const bondMetrics = await bondMarketplace.getBondMarketMetrics(bondInfo.bondId);
+    console.log("Bond Market Metrics:");
+    console.log("Last Price:", ethers.formatUnits(bondMetrics.lastPrice, 6), "USDC");
+    console.log("24h Volume:", ethers.formatUnits(bondMetrics.volume24h, 6), "USDC");
+    console.log("Number of Holders:", bondMetrics.numberOfHolders.toString());
+    console.log("Average Holding Time:", bondMetrics.averageHoldingTime.toString(), "seconds");
+    console.log("Total Value Locked:", ethers.formatUnits(bondMetrics.totalValueLocked, 6), "USDC");
+
+    // Get buyer metrics
+    const buyerMetrics = await bondMarketplace.getUserMetrics(buyer.getAddress());
+    console.log("\nBuyer Metrics:");
+    console.log("Bonds Held:", buyerMetrics.bondsHeld.toString());
+    console.log("Total Trading Volume:", ethers.formatUnits(buyerMetrics.totalVolume, 6), "USDC");
+    console.log("Active Positions:", buyerMetrics.activePositions.map(pos => pos.toString()).join(", "));
+
+    // Get all bond holders
+    const bondHolders = await bondMarketplace.getAllBondHolders(bondInfo.bondId);
+    console.log("\nAll Bond Holders:");
+    for (const holder of bondHolders) {
+    console.log(holder);
+    }
+
+    // Check global marketplace statistics
+    const totalListedBonds = await bondMarketplace.totalListedBonds();
+    const totalTradingVolume = await bondMarketplace.totalTradingVolume();
+    console.log("\nGlobal Marketplace Statistics:");
+    console.log("Total Listed Bonds:", totalListedBonds.toString());
+    console.log("Total Trading Volume:", ethers.formatUnits(totalTradingVolume, 6), "USDC");
 }
 
 main()

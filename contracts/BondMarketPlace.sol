@@ -55,6 +55,9 @@ contract BondMarketPlace is Ownable {
         uint256 price
     );
 
+    // Bond delisted event
+    event BondDelisted(uint256 indexed bondId, address indexed delister);
+
     // Purchase event
     event BondPurchaseRecorded(
         uint256 indexed bondId,
@@ -136,6 +139,33 @@ contract BondMarketPlace is Ownable {
         listing.listingTime = block.timestamp; // Optional timestamp update
 
         emit BondListed(bondId, msg.sender, newPrice);
+    }
+
+    /**
+     * @notice Delist a bond from the marketplace
+     * @param bondId The identifier for the bond to delist
+     */
+    function delistBond(uint256 bondId) external {
+        BondListing storage listing = bondListings[bondId];
+        require(listing.isListed, "Bond is not listed");
+
+        // Only the issuer or marketplace owner can delist
+        require(
+            msg.sender == listing.issuer || msg.sender == owner(),
+            "Not authorized to delist"
+        );
+
+        // marketplace can only delist if there are no pending trades
+        // require(
+        //     listing.bondContract.balanceOf(address(this)) == 0,
+        //     "Cannot delist with pending trades"
+        // );
+
+        listing.isListed = false;
+        listing.listingPrice = 0;
+        totalListedBonds--;
+
+        emit BondDelisted(bondId, msg.sender);
     }
 
     /**
