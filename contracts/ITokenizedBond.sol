@@ -51,24 +51,6 @@ interface ITokenizedBond is IERC20 {
      */
     function mintBond(address to, uint256 bondAmount) external;
 
-    //-------------------- For direct interaction without the marketplace --------------------//
-
-    /**
-     * @notice Purchase a bond by sending stablecoin to the contract
-     * @param bondAmount Number of bonds to purchase
-     */
-    function purchaseBond(uint256 bondAmount) external;
-
-    /**
-     * @notice Claim coupon payments for the bond
-     */
-    function claimCoupon() external;
-
-    /**
-     * @notice Redeem the bond after maturity
-     */
-    function redeem() external;
-
     //-------------------- For interaction with the marketplace --------------------//
 
     /**

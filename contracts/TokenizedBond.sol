@@ -22,43 +22,47 @@ contract TokenizedBond is ERC20, Ownable {
     // using means that the functions from SafeERC20 can be called directly
     using SafeERC20 for IERC20;
 
-    // Document URI for legal documentation
-    string public documentURI;
-
-    // Add a state variable to store document hash
-    bytes32 public documentHash;
+    //-------------------- Compliance and Security ------------------------------------//
+    struct DocumentInfo {
+        string documentURI; // URI to legal document
+        bytes32 documentHash; // Hash of the document
+    }
 
     //-------------------- Bond Details ------------------------------------//
 
-    // Unique identifier or name for the bond
-    uint256 public bondId;
-    // Bond issuer's address
-    address public issuer;
-    // Maximum number of bonds that can be issued
-    uint256 public maxBondSupply;
-    // UNIX timestamp for maturity, after which bond can be redeemed
-    uint256 public maturityDate;
-    // Total principal amount of the bond
-    uint256 public faceValue;
-    // Annual coupon rate (e.g., in basis points)
-    uint256 public couponRate;
-    // Number of coupon payments per year
-    uint256 public couponFrequency;
-    // Date the bond was issued
-    uint256 public issueDate;
-    // Date of the last coupon payment
-    uint256 public lastCouponPaymentDate;
-    // Total number of coupons paid
-    uint256 public totalCouponsPaid;
+    struct BondInfo {
+        string name; // Name of the bond
+        string symbol; // Symbol of the bond
+        uint256 bondId; // Unique identifier or name for the bond
+        address issuer; // Bond issuer's address
+        uint256 maxBondSupply; // Maximum number of bonds that can be issued
+        uint256 maturityDate; // UNIX timestamp for maturity, after which bond can be redeemed
+        uint256 faceValue; // Total principal amount of the bond
+        uint256 couponRate; // Annual coupon rate (e.g., in basis points)
+        uint256 couponFrequency; // Number of coupon payments per year, e.g., 2 for semi-annual
+        uint256 issueDate; // Date the bond was issued
+        uint256 lastCouponPaymentDate; // Date of the last coupon payment
+        uint256 totalCouponsPaid; // Total number of coupons paid, for tracking
+        uint256 totalBondsMinted; // Total number of bonds minted
+    }
+
+    //-------------------- Fractionalization ------------------------------------//
+
+    struct FractionalizationInfo {
+        uint256 tokensPerBond; // Total ERC20 tokens representing one bond
+        uint256 bondPrice; // Price of one full bond (in stablecoin units)
+        uint256 totalRaised; // Total amount raised from bond sales
+    }
+
+    BondInfo public bondInfo;
+    FractionalizationInfo public fractionInfo;
+    DocumentInfo public documentInfo;
+
     // Track last coupon claimed by each holder
     mapping(address => uint256) public lastClaimedCoupon;
 
-    uint256 public totalBondsMinted;
-
     // e.g., USDC, USDT, DAI etc.
     IERC20 public stablecoin;
-
-    // Security related state variables
 
     // Whitelist of addresses allowed to hold tokens
     mapping(address => bool) public whitelist;
@@ -72,34 +76,28 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 bondAmount,
         uint256 tokenAmount
     );
-    // Events for bond purchase, coupon payment, and bond redemption
     event BondPurchased(address indexed buyer, uint256 bondAmount);
     event CouponPaid(address indexed claimer, uint256 couponAmount);
     event BondRedeemed(address indexed redeemer, uint256 redemptionAmount);
 
-    // Events for compliance tracking
-    event DocumentUpdated(string documentURI);
+    event DocumentURIUpdated(string documentURI);
+    event DocumentHashUpdated(bytes32 documentHash);
+
     event AddedToWhitelist(address indexed account);
     event RemovedFromWhitelist(address indexed account);
     event KycStatusChanged(address indexed account, bool approved);
 
-    // Add an event for document hash updates
-    event DocumentHashUpdated(bytes32 indexed documentHash);
-
-    //-------------------- Fractionalization ------------------------------------//
-
-    // Total ERC20 tokens representing one bond
-    uint256 public tokensPerBond;
-
-    // Price of one full bond (in stablecoin units)
-    uint256 public bondPrice;
-
-    // Total amount raised from bond sales
-    uint256 public totalRaised;
+    event BondSwapped(
+        address indexed from,
+        address indexed to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    );
 
     constructor(
-        string memory name,
-        string memory symbol,
+        string memory _name,
+        string memory _symbol,
+        uint256 _id,
         uint256 _faceValue,
         uint256 _couponRate,
         uint256 _couponFrequency,
@@ -109,17 +107,39 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 _tokensPerBond,
         uint256 _bondPrice,
         uint256 _maxBondSupply
-    ) ERC20(name, symbol) Ownable(msg.sender) {
-        faceValue = _faceValue;
-        couponRate = _couponRate;
-        couponFrequency = _couponFrequency;
-        maturityDate = _maturityDate;
-        issuer = _issuer;
-        issueDate = block.timestamp;
+    ) ERC20(_name, _symbol) Ownable(msg.sender) {
+        bondInfo = BondInfo({
+            name: _name,
+            symbol: _symbol,
+            bondId: _id,
+            issuer: _issuer,
+            maxBondSupply: _maxBondSupply,
+            maturityDate: _maturityDate,
+            faceValue: _faceValue,
+            couponRate: _couponRate,
+            couponFrequency: _couponFrequency,
+            issueDate: block.timestamp,
+            lastCouponPaymentDate: block.timestamp,
+            totalCouponsPaid: 0,
+            totalBondsMinted: 0
+        });
+
+        fractionInfo = FractionalizationInfo({
+            tokensPerBond: _tokensPerBond,
+            bondPrice: _bondPrice,
+            totalRaised: 0
+        });
+
         stablecoin = IERC20(_stablecoinAddress);
-        tokensPerBond = _tokensPerBond;
-        bondPrice = _bondPrice;
-        maxBondSupply = _maxBondSupply;
+    }
+
+    // Add this function after the constructor and before mintBond function
+    /**
+     * @notice Get all bond information
+     * @return BondInfo struct containing all bond details
+     */
+    function getBondInfo() external view returns (BondInfo memory) {
+        return bondInfo;
     }
 
     /**
@@ -131,29 +151,29 @@ contract TokenizedBond is ERC20, Ownable {
         require(to != address(0), "Invalid recipient address");
         require(bondAmount > 0, "Amount must be greater than 0");
         require(
-            totalBondsMinted + bondAmount <= maxBondSupply,
+            bondInfo.totalBondsMinted + bondAmount <= bondInfo.maxBondSupply,
             "Exceeds maximum bond supply"
         );
-        require(block.timestamp < maturityDate, "Bond has matured");
+        require(block.timestamp < bondInfo.maturityDate, "Bond has matured");
 
         // Calculate total future coupon payments
-        uint256 remainingCoupons = ((maturityDate - block.timestamp) *
-            couponFrequency) / 365 days;
+        uint256 remainingCoupons = ((bondInfo.maturityDate - block.timestamp) *
+            bondInfo.couponFrequency) / 365 days;
         uint256 totalCouponPayments = (bondAmount *
-            faceValue *
-            couponRate *
-            remainingCoupons) / (10000 * couponFrequency);
+            bondInfo.faceValue *
+            bondInfo.couponRate *
+            remainingCoupons) / (10000 * bondInfo.couponFrequency);
 
         // Ensure contract has enough stablecoin for coupon payments and principal
         require(
             stablecoin.balanceOf(address(this)) >=
-                totalCouponPayments + (bondAmount * faceValue),
+                totalCouponPayments + (bondAmount * bondInfo.faceValue),
             "Insufficient stablecoin reserve for future payments"
         );
 
-        uint256 tokenAmount = bondAmount * tokensPerBond;
+        uint256 tokenAmount = bondAmount * fractionInfo.tokensPerBond;
         _mint(to, tokenAmount);
-        totalBondsMinted += bondAmount;
+        bondInfo.totalBondsMinted += bondAmount;
 
         // Initialize the last claimed coupon timestamp for the new holder
         if (lastClaimedCoupon[to] == 0) {
@@ -168,22 +188,29 @@ contract TokenizedBond is ERC20, Ownable {
      * @param _documentURI The URI pointing to the legal documents
      */
     function setDocumentURI(string calldata _documentURI) external onlyOwner {
-        documentURI = _documentURI;
-        emit DocumentUpdated(_documentURI);
+        documentInfo.documentURI = _documentURI;
+        emit DocumentURIUpdated(_documentURI);
     }
 
-    // Add a function to set the document hash
+    /**
+     * @notice Set the document hash for legal documentation
+     * @param _documentHash The hash of the legal documents
+     */
     function setDocumentHash(bytes32 _documentHash) external onlyOwner {
-        documentHash = _documentHash;
+        documentInfo.documentHash = _documentHash;
         emit DocumentHashUpdated(_documentHash);
     }
 
-    // Optionally add a function to verify a document's content matches the stored hash
+    /**
+     * @notice Verify the hash of a document
+     * @param documentContent The content of the document
+     * @return Whether the hash of the document matches the stored hash
+     */
     function verifyDocument(
         string calldata documentContent
     ) external view returns (bool) {
         bytes32 calculatedHash = keccak256(abi.encodePacked(documentContent));
-        return calculatedHash == documentHash;
+        return calculatedHash == documentInfo.documentHash;
     }
 
     /**
@@ -233,7 +260,7 @@ contract TokenizedBond is ERC20, Ownable {
      */
     function canTransfer(address from, address to) public view returns (bool) {
         // Allow transfers to the contract itself for redemption after maturity
-        if (block.timestamp >= maturityDate) {
+        if (block.timestamp >= bondInfo.maturityDate) {
             // After maturity, only allow transfers to the contract itself (for redemption)
             return
                 to == address(this) &&
@@ -251,80 +278,27 @@ contract TokenizedBond is ERC20, Ownable {
             kycApproved[to];
     }
 
-    //-------------------- Do not use the following with Marketplace ------------------------------------//
-    // These cannot be used together with the marketplace as the msg.sender will be the marketplace contract
-    // and not the buyer. The stablecoins will not be debited correctly.
-    // It is still fully functional on its own if we do not use marketplace as the intermediary
-
-    /**
-     * @notice Purchase a bond by sending stablecoin to the contract
-     * @param bondAmount Number of bonds to purchase
-     */
-    function purchaseBond(uint256 bondAmount) external {
-        require(block.timestamp < maturityDate, "Bond no longer for sale");
-        uint256 totalPrice = bondAmount * bondPrice;
-        require(
-            totalRaised + totalPrice <= maxBondSupply,
-            "Exceeds maximum bond supply"
-        );
-        stablecoin.safeTransferFrom(msg.sender, address(this), totalPrice);
-        _mint(msg.sender, bondAmount * tokensPerBond);
-        totalRaised += totalPrice;
-        emit BondPurchased(msg.sender, bondAmount);
-    }
-
-    /**
-     * @notice Claim coupon payments for the bond
-     */
-    function claimCoupon() external {
-        require(balanceOf(msg.sender) > 0, "No bonds held");
-        require(
-            block.timestamp >=
-                lastClaimedCoupon[msg.sender] + (365 days / couponFrequency),
-            "Too early"
-        );
-
-        // Calculate semi-annual coupon (annual rate divided by frequency)
-        uint256 couponAmount = (balanceOf(msg.sender) *
-            faceValue *
-            couponRate) / (10000 * tokensPerBond * couponFrequency);
-        lastClaimedCoupon[msg.sender] = block.timestamp;
-        stablecoin.safeTransfer(msg.sender, couponAmount);
-        emit CouponPaid(msg.sender, couponAmount);
-    }
-
-    /**
-     * @notice Redeem the bond after maturity to the address that is calling the function
-     */
-    function redeem() external {
-        require(block.timestamp >= maturityDate, "Bond not matured");
-        uint256 bondTokens = balanceOf(msg.sender);
-        require(bondTokens > 0, "No bonds to redeem");
-
-        uint256 redemptionAmount = (bondTokens * faceValue) / tokensPerBond;
-        _burn(msg.sender, bondTokens);
-        stablecoin.safeTransfer(msg.sender, redemptionAmount);
-        emit BondRedeemed(msg.sender, redemptionAmount);
-    }
-
-    //--------------------- End of functions not to be used with Marketplace -------------------------------//
-
     /**
      * @notice Purchase a bond by sending stablecoin to the contract
      * @param buyer The address of the buyer purchasing the bonds
      * @param bondAmount Number of bonds to purchase
      */
     function purchaseBondFor(address buyer, uint256 bondAmount) external {
-        require(block.timestamp < maturityDate, "Bond no longer for sale");
-        uint256 totalPrice = bondAmount * bondPrice;
+        require(whitelist[buyer], "Buyer not whitelisted");
+        require(kycApproved[buyer], "Buyer not KYC approved");
         require(
-            totalRaised + totalPrice <= maxBondSupply,
+            block.timestamp < bondInfo.maturityDate,
+            "Bond no longer for sale"
+        );
+        uint256 totalPrice = bondAmount * fractionInfo.bondPrice;
+        require(
+            fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
             "Exceeds maximum bond supply"
         );
         // Pull stablecoin from the buyer's account
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
-        _mint(buyer, bondAmount * tokensPerBond);
-        totalRaised += totalPrice;
+        _mint(buyer, bondAmount * fractionInfo.tokensPerBond);
+        fractionInfo.totalRaised += totalPrice;
         emit BondPurchased(buyer, bondAmount);
     }
 
@@ -333,15 +307,20 @@ contract TokenizedBond is ERC20, Ownable {
      * @param claimer The address for which to claim coupon payments.
      */
     function claimCouponFor(address claimer) external {
+        require(whitelist[claimer], "Claimer not whitelisted");
+        require(kycApproved[claimer], "Claimer not KYC approved");
         require(balanceOf(claimer) > 0, "No bonds held");
         require(
             block.timestamp >=
-                lastClaimedCoupon[claimer] + (365 days / couponFrequency),
+                lastClaimedCoupon[claimer] +
+                    (365 days / bondInfo.couponFrequency),
             "Too early"
         );
 
-        uint256 couponAmount = (balanceOf(claimer) * faceValue * couponRate) /
-            (10000 * tokensPerBond * couponFrequency);
+        uint256 couponAmount = (balanceOf(claimer) *
+            bondInfo.faceValue *
+            bondInfo.couponRate) /
+            (10000 * fractionInfo.tokensPerBond * bondInfo.couponFrequency);
         lastClaimedCoupon[claimer] = block.timestamp;
         stablecoin.safeTransfer(claimer, couponAmount);
         emit CouponPaid(claimer, couponAmount);
@@ -352,13 +331,74 @@ contract TokenizedBond is ERC20, Ownable {
      * @param redeemer The address to which the redemption amount will be transferred
      */
     function redeemFor(address redeemer) external {
-        require(block.timestamp >= maturityDate, "Bond not matured");
+        require(whitelist[redeemer], "Redeemer not whitelisted");
+        require(kycApproved[redeemer], "Redeemer not KYC approved");
+        require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
         uint256 bondTokens = balanceOf(redeemer);
         require(bondTokens > 0, "No bonds to redeem");
 
-        uint256 redemptionAmount = (bondTokens * faceValue) / tokensPerBond;
+        uint256 redemptionAmount = (bondTokens * bondInfo.faceValue) /
+            fractionInfo.tokensPerBond;
         _burn(redeemer, bondTokens);
         stablecoin.safeTransfer(redeemer, redemptionAmount);
         emit BondRedeemed(redeemer, redemptionAmount);
+    }
+
+    /**
+     * @notice Swap bonds between two approved holders (both parties must agree)
+     * @param from Address sending the bonds
+     * @param to Address receiving the bonds
+     * @param tokenAmount Amount of bond tokens to swap
+     * @param stablecoinAmount Amount of stablecoins to pay
+     * @dev Requires approval from both parties - either can initiate
+     */
+    function swapBonds(
+        address from,
+        address to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    ) external {
+        // Verify that caller is one of the participants
+        require(
+            msg.sender == from || msg.sender == to,
+            "Not authorized for swap"
+        );
+
+        // Check if both parties are whitelisted and KYC approved
+        require(
+            whitelist[from] && whitelist[to],
+            "Both parties must be whitelisted"
+        );
+        require(
+            kycApproved[from] && kycApproved[to],
+            "Both parties must be KYC approved"
+        );
+
+        // Check if the bond has matured
+        require(
+            block.timestamp < bondInfo.maturityDate,
+            "Bond has matured, swapping disabled"
+        );
+
+        // Verify balances
+        require(balanceOf(from) >= tokenAmount, "Insufficient bond tokens");
+        require(
+            stablecoin.balanceOf(to) >= stablecoinAmount,
+            "Insufficient stablecoins"
+        );
+
+        // Perform the swap - transfer bonds from 'from' to 'to'
+        _transfer(from, to, tokenAmount);
+
+        // Transfer stablecoins from 'to' to 'from' as payment
+        stablecoin.safeTransferFrom(to, from, stablecoinAmount);
+
+        // Update last claimed coupon if needed
+        if (lastClaimedCoupon[to] == 0) {
+            lastClaimedCoupon[to] = block.timestamp;
+        }
+
+        // Emit an event for the swap
+        emit BondSwapped(from, to, tokenAmount, stablecoinAmount);
     }
 }
