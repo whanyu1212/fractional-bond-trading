@@ -17,7 +17,7 @@ async function main() {
     const couponRate = 500;  // 5.00% (in basis points)
     const couponFrequency = 2;  // Semi-annual payments
     const maturityDate = currentTimestamp + (365 * 24 * 60 * 60);  // 1 year from now
-    const tokensPerBond = ethers.parseUnits("1000", 18);  // 1000 tokens per bond
+    const tokensPerBond = 1000
     const bondPrice = ethers.parseUnits("950", 6);  // 950 USDC (slight discount)
     const maxBondSupply = ethers.parseUnits("1000000", 6); // 1,000,000 bonds
 
@@ -61,7 +61,7 @@ async function main() {
 
     // 1. Mint stablecoins
     const mintAmount = ethers.parseUnits("10000", 6); // Mint an ample amount to deployer and users
-    const contractMintAmount = ethers.parseUnits("2000", 6); // Mint a smaller amount to the contract
+    const contractMintAmount = ethers.parseUnits("200000000", 6); // Mint a smaller amount to the contract
 
     // Mint to deployer and some users
     await mockStablecoin.mint(deployer.address, mintAmount);
@@ -150,7 +150,7 @@ async function main() {
     console.log("\n--- Testing Purchase Restrictions ---");
     try {
         await mockStablecoin.connect(user2).approve(tokenizedBondAddress, bondPrice);
-        await tokenizedBond.connect(user2).purchaseBondFor(user2.address, 1);
+        await tokenizedBond.connect(user2).purchaseBondFor(user2.address, 150);
         console.log("❌ Purchase should have failed for non-whitelisted user");
     } catch (error) {
         console.log("✅ Purchase correctly failed for non-whitelisted user");
@@ -166,7 +166,7 @@ async function main() {
     console.log("\nApproving payment of:", ethers.formatUnits(bondPrice, 6), "USDC to purchase bond");
     
     try {
-        await tokenizedBond.connect(user1).purchaseBondFor(user1.address, 1);
+        await tokenizedBond.connect(user1).purchaseBondFor(user1.address, 150);
         console.log("Successfully purchased 1 bond");
         const bondBalance = await tokenizedBond.balanceOf(user1.address);
         console.log("Paid:", ethers.formatUnits(bondPrice, 6), "USDC");
@@ -212,14 +212,14 @@ async function main() {
         const user2InitialStableBalance = await mockStablecoin.balanceOf(user2.address);
         
         console.log(`\nInitial balances:`);
-        console.log(`User1 bond balance: ${ethers.formatUnits(user1InitialBondBalance, 18)} tokens`);
-        console.log(`User2 bond balance: ${ethers.formatUnits(user2InitialBondBalance, 18)} tokens`);
+        console.log(`User1 bond balance: ${user1InitialBondBalance.toString()} tokens`);
+        console.log(`User2 bond balance: ${user2InitialBondBalance.toString()} tokens`);
         console.log(`User1 stablecoin balance: ${ethers.formatUnits(user1InitialStableBalance, 6)} USDC`);
         console.log(`User2 stablecoin balance: ${ethers.formatUnits(user2InitialStableBalance, 6)} USDC`);
         
         // Set up the swap parameters
-        const tokenAmountToSwap = ethers.parseUnits("500", 18); // User1 sends 500 bond tokens
-        const paymentAmount = ethers.parseUnits("500", 6);      // User2 pays 500 USDC
+        const tokenAmountToSwap = 100; 
+        const paymentAmount = ethers.parseUnits("100", 6);      // User2 pays 100 USDC for 100 tokens
         
         // User2 approves stablecoin payment
         await mockStablecoin.connect(user2).approve(tokenizedBondAddress, paymentAmount);
@@ -233,7 +233,7 @@ async function main() {
             tokenAmountToSwap,
             paymentAmount
         );
-        console.log("✅ User1 sold 500 tokens to User2 for 500 USDC");
+        console.log("✅ User1 sold 100 tokens to User2 for 100 USDC");
         
         // Get intermediate balances
         const user1MidBondBalance = await tokenizedBond.balanceOf(user1.address);
@@ -252,7 +252,7 @@ async function main() {
             tokenAmountToSwap,
             paymentAmount
         );
-        console.log("✅ User2 sold 500 tokens to User1 for 500 USDC");
+        console.log("✅ User2 sold 100 tokens to User1 for 100 USDC");
         
         // Get final balances
         const user1FinalBondBalance = await tokenizedBond.balanceOf(user1.address);
@@ -261,8 +261,8 @@ async function main() {
         const user2FinalStableBalance = await mockStablecoin.balanceOf(user2.address);
         
         console.log(`\nFinal balances after both swaps:`);
-        console.log(`User1 bond balance: ${ethers.formatUnits(user1FinalBondBalance, 18)} tokens`);
-        console.log(`User2 bond balance: ${ethers.formatUnits(user2FinalBondBalance, 18)} tokens`);
+        console.log(`User1 bond balance: ${user1FinalBondBalance} tokens`);
+        console.log(`User2 bond balance: ${user2FinalBondBalance} tokens`);
         console.log(`User1 stablecoin balance: ${ethers.formatUnits(user1FinalStableBalance, 6)} USDC`);
         console.log(`User2 stablecoin balance: ${ethers.formatUnits(user2FinalStableBalance, 6)} USDC`);
         

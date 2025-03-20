@@ -322,27 +322,32 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
-     * @notice Purchase a bond by sending stablecoin to the contract
-     * @param buyer The address of the buyer purchasing the bonds
-     * @param bondAmount Number of bonds to purchase
+     * @notice Purchase of bonds in terms of tokens
+     * @param buyer The address of the buyer
+     * @param tokenAmount The amount of tokens to purchase
      */
-    function purchaseBondFor(address buyer, uint256 bondAmount) external {
+    function purchaseBondFor(address buyer, uint256 tokenAmount) external {
         require(whitelist[buyer], "Buyer not whitelisted");
         require(kycApproved[buyer], "Buyer not KYC approved");
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond no longer for sale"
         );
-        uint256 totalPrice = bondAmount * fractionInfo.bondPrice;
+
+        // Calculate price based on token amount rather than bond amount
+        uint256 totalPrice = (tokenAmount * fractionInfo.bondPrice) /
+            fractionInfo.tokensPerBond;
+
         require(
             fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
             "Exceeds maximum bond supply"
         );
+
         // Pull stablecoin from the buyer's account
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
-        _mint(buyer, bondAmount * fractionInfo.tokensPerBond);
+        _mint(buyer, tokenAmount);
         fractionInfo.totalRaised += totalPrice;
-        emit BondPurchased(buyer, bondAmount);
+        emit BondPurchased(buyer, tokenAmount);
     }
 
     /**
@@ -363,7 +368,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 couponAmount = (balanceOf(claimer) *
             bondInfo.faceValue *
             bondInfo.couponRate) /
-            (10000 * fractionInfo.tokensPerBond * bondInfo.couponFrequency);
+            (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
         lastClaimedCoupon[claimer] = block.timestamp;
         stablecoin.safeTransfer(claimer, couponAmount);
         emit CouponPaid(claimer, couponAmount);
