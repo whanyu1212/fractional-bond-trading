@@ -340,7 +340,7 @@ contract TokenizedBond is ERC20, Ownable {
 
         require(
             fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
-            "Exceeds maximum token supply"
+            "Exceeds maximum tokens"
         );
 
         // Pull stablecoin from the buyer's account
