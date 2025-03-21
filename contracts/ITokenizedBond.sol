@@ -52,12 +52,12 @@ interface ITokenizedBond is IERC20 {
     function mintBond(address to, uint256 bondAmount) external;
 
     //-------------------- For interaction with the marketplace --------------------//
-
     /**
-     * @notice Purchase a bond by sending stablecoin to the contract
-     * @param bondAmount Number of bonds to purchase
+     * @notice Purchase of bonds in terms of tokens
+     * @param buyer The address of the buyer
+     * @param tokenAmount The amount of tokens to purchase
      */
-    function purchaseBondFor(address buyer, uint256 bondAmount) external;
+    function purchaseBondFor(address buyer, uint256 tokenAmount) external;
 
     /**
      * @notice Claim coupon payments for the bond

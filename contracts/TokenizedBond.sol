@@ -71,6 +71,12 @@ contract TokenizedBond is ERC20, Ownable {
     mapping(address => bool) public kycApproved;
 
     //-------------------- Events ------------------------------------//
+    event BondModified(
+        uint256 couponRate,
+        uint256 maturityDate,
+        uint256 maxBondSupply,
+        uint256 bondPrice
+    );
     event BondMinted(
         address indexed to,
         uint256 bondAmount,
@@ -133,13 +139,50 @@ contract TokenizedBond is ERC20, Ownable {
         stablecoin = IERC20(_stablecoinAddress);
     }
 
-    // Add this function after the constructor and before mintBond function
     /**
-     * @notice Get all bond information
-     * @return BondInfo struct containing all bond details
+     * @notice Modify a subset of bond parameters (only callable by owner/issuer), must be bigger than 0
+     * @param _couponRate New coupon rate in basis points
+     * @param _maturityDate New maturity date
+     * @param _maxBondSupply New maximum bond supply
+     * @param _bondPrice New bond price
      */
-    function getBondInfo() external view returns (BondInfo memory) {
-        return bondInfo;
+    function modifyBond(
+        uint256 _couponRate,
+        uint256 _maturityDate,
+        uint256 _maxBondSupply,
+        uint256 _bondPrice
+    ) external onlyOwner {
+        require(
+            bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
+            "Cannot modify after bonds are minted"
+        );
+
+        if (_couponRate > 0) {
+            bondInfo.couponRate = _couponRate;
+        }
+
+        if (_maturityDate > block.timestamp) {
+            bondInfo.maturityDate = _maturityDate;
+        }
+
+        if (_maxBondSupply > 0) {
+            require(
+                _maxBondSupply >= bondInfo.totalBondsMinted,
+                "New supply must exceed minted bonds"
+            );
+            bondInfo.maxBondSupply = _maxBondSupply;
+        }
+
+        if (_bondPrice > 0) {
+            fractionInfo.bondPrice = _bondPrice;
+        }
+
+        emit BondModified(
+            bondInfo.couponRate,
+            bondInfo.maturityDate,
+            bondInfo.maxBondSupply,
+            fractionInfo.bondPrice
+        );
     }
 
     /**
@@ -279,27 +322,32 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
-     * @notice Purchase a bond by sending stablecoin to the contract
-     * @param buyer The address of the buyer purchasing the bonds
-     * @param bondAmount Number of bonds to purchase
+     * @notice Purchase of bonds in terms of tokens
+     * @param buyer The address of the buyer
+     * @param tokenAmount The amount of tokens to purchase
      */
-    function purchaseBondFor(address buyer, uint256 bondAmount) external {
+    function purchaseBondFor(address buyer, uint256 tokenAmount) external {
         require(whitelist[buyer], "Buyer not whitelisted");
         require(kycApproved[buyer], "Buyer not KYC approved");
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond no longer for sale"
         );
-        uint256 totalPrice = bondAmount * fractionInfo.bondPrice;
+
+        // Calculate price based on token amount rather than bond amount
+        uint256 totalPrice = (tokenAmount * fractionInfo.bondPrice) /
+            fractionInfo.tokensPerBond;
+
         require(
             fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
             "Exceeds maximum bond supply"
         );
+
         // Pull stablecoin from the buyer's account
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
-        _mint(buyer, bondAmount * fractionInfo.tokensPerBond);
+        _mint(buyer, tokenAmount);
         fractionInfo.totalRaised += totalPrice;
-        emit BondPurchased(buyer, bondAmount);
+        emit BondPurchased(buyer, tokenAmount);
     }
 
     /**
@@ -320,7 +368,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 couponAmount = (balanceOf(claimer) *
             bondInfo.faceValue *
             bondInfo.couponRate) /
-            (10000 * fractionInfo.tokensPerBond * bondInfo.couponFrequency);
+            (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
         lastClaimedCoupon[claimer] = block.timestamp;
         stablecoin.safeTransfer(claimer, couponAmount);
         emit CouponPaid(claimer, couponAmount);
