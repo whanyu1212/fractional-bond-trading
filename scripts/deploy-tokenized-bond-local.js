@@ -18,7 +18,7 @@ async function main() {
     const couponFrequency = 2;  // Semi-annual payments
     const maturityDate = currentTimestamp + (365 * 24 * 60 * 60);  // 1 year from now
     const tokensPerBond = 1000
-    const bondPrice = ethers.parseUnits("950", 6);  // 950 USDC (slight discount)
+    const tokenPrice = ethers.parseUnits("950", 6);  // 950 USDC (slight discount)
     const maxBondSupply = ethers.parseUnits("1000000", 6); // 1,000,000 bonds
 
     // Get signer for issuer address
@@ -46,7 +46,7 @@ async function main() {
         issuerAddress,         // _issuer (8th) - this was missing!
         mockStablecoinAddress, // _stablecoinAddress (9th)
         tokensPerBond,         // _tokensPerBond (10th)
-        bondPrice,             // _bondPrice (11th)
+        tokenPrice,             // _tokenPrice (11th)
         maxBondSupply          // _maxBondSupply (12th)
     );
 
@@ -149,7 +149,7 @@ async function main() {
     // It should fail
     console.log("\n--- Testing Purchase Restrictions ---");
     try {
-        await mockStablecoin.connect(user2).approve(tokenizedBondAddress, bondPrice);
+        await mockStablecoin.connect(user2).approve(tokenizedBondAddress, tokenPrice);
         await tokenizedBond.connect(user2).purchaseBondFor(user2.address, 150);
         console.log("❌ Purchase should have failed for non-whitelisted user");
     } catch (error) {
@@ -160,16 +160,16 @@ async function main() {
     console.log("\n--- Bond Purchase ---");
 
     // User 1 approves the bond contract to spend their stablecoins
-    await mockStablecoin.connect(user1).approve(tokenizedBondAddress, bondPrice);
-    console.log(`User1 approved ${ethers.formatUnits(bondPrice, 6)} USDC for bond purchase`);
+    await mockStablecoin.connect(user1).approve(tokenizedBondAddress, tokenPrice);
+    console.log(`User1 approved ${ethers.formatUnits(tokenPrice, 6)} USDC for bond purchase`);
 
-    console.log("\nApproving payment of:", ethers.formatUnits(bondPrice, 6), "USDC to purchase bond");
+    console.log("\nApproving payment of:", ethers.formatUnits(tokenPrice, 6), "USDC to purchase bond");
     
     try {
         await tokenizedBond.connect(user1).purchaseBondFor(user1.address, 150);
         console.log("Successfully purchased 1 bond");
         const bondBalance = await tokenizedBond.balanceOf(user1.address);
-        console.log("Paid:", ethers.formatUnits(bondPrice, 6), "USDC");
+        console.log("Paid:", ethers.formatUnits(tokenPrice, 6), "USDC");
     } catch (error) {
         console.log("❌ Bond purchase failed:", error.message);
         process.exit(1);

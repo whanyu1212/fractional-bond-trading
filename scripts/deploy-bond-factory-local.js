@@ -72,7 +72,14 @@ async function main(){
     // Wait for the transaction
     await tx.wait();
 
+    const price = await bondFactory.bondIdToPrice(bondId);
+    console.log("\n🏷️  Bond ID to Price Mapping:");
+    console.log(`   ID: ${bondId} → 💵 ${ethers.formatUnits(price, 6)} USDC`);
+
     //------------------------ Testing some view functions -----------------------------------------//
+    const testbondPrice = await bondFactory.getBondPricebyId(bondId);
+    console.log("💵 Bond price:", ethers.formatUnits(testbondPrice, 6), "USDC");
+
     const bondAddress = await bondFactory.getLatestBond();
     console.log("✅ Latest bond created:", bondAddress);
 
