@@ -50,7 +50,7 @@ contract TokenizedBond is ERC20, Ownable {
 
     struct FractionalizationInfo {
         uint256 tokensPerBond; // Total ERC20 tokens representing one bond
-        uint256 bondPrice; // Price of one full bond (in stablecoin units)
+        uint256 tokenPrice; // Price of one token in stablecoin
         uint256 totalRaised; // Total amount raised from bond sales
     }
 
@@ -75,7 +75,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 couponRate,
         uint256 maturityDate,
         uint256 maxBondSupply,
-        uint256 bondPrice
+        uint256 tokenPrice
     );
     event BondMinted(
         address indexed to,
@@ -111,7 +111,7 @@ contract TokenizedBond is ERC20, Ownable {
         address _issuer,
         address _stablecoinAddress,
         uint256 _tokensPerBond,
-        uint256 _bondPrice,
+        uint256 _tokenPrice,
         uint256 _maxBondSupply
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
@@ -132,7 +132,7 @@ contract TokenizedBond is ERC20, Ownable {
 
         fractionInfo = FractionalizationInfo({
             tokensPerBond: _tokensPerBond,
-            bondPrice: _bondPrice,
+            tokenPrice: _tokenPrice,
             totalRaised: 0
         });
 
@@ -144,13 +144,13 @@ contract TokenizedBond is ERC20, Ownable {
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date
      * @param _maxBondSupply New maximum bond supply
-     * @param _bondPrice New bond price
+     * @param _tokenPrice New bond price
      */
     function modifyBond(
         uint256 _couponRate,
         uint256 _maturityDate,
         uint256 _maxBondSupply,
-        uint256 _bondPrice
+        uint256 _tokenPrice
     ) external onlyOwner {
         require(
             bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
@@ -173,15 +173,15 @@ contract TokenizedBond is ERC20, Ownable {
             bondInfo.maxBondSupply = _maxBondSupply;
         }
 
-        if (_bondPrice > 0) {
-            fractionInfo.bondPrice = _bondPrice;
+        if (_tokenPrice > 0) {
+            fractionInfo.tokenPrice = _tokenPrice;
         }
 
         emit BondModified(
             bondInfo.couponRate,
             bondInfo.maturityDate,
             bondInfo.maxBondSupply,
-            fractionInfo.bondPrice
+            fractionInfo.tokenPrice
         );
     }
 
@@ -335,7 +335,7 @@ contract TokenizedBond is ERC20, Ownable {
         );
 
         // Calculate price based on token amount rather than bond amount
-        uint256 totalPrice = (tokenAmount * fractionInfo.bondPrice) /
+        uint256 totalPrice = (tokenAmount * fractionInfo.tokenPrice) /
             fractionInfo.tokensPerBond;
 
         require(
