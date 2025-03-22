@@ -140,6 +140,22 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
+     * @notice Get the bond price in stablecoin
+     * @return The price of one bond (unit token price x tokens per bond) in stablecoin
+     */
+    function getBondPrice() public view returns (uint256) {
+        return fractionInfo.tokenPrice * fractionInfo.tokensPerBond;
+    }
+
+    /**
+     * @notice Get the Bond ID
+     * @return The unique identifier for the bond
+     */
+    function getBondId() public view returns (uint256) {
+        return bondInfo.bondId;
+    }
+
+    /**
      * @notice Modify a subset of bond parameters (only callable by owner/issuer), must be bigger than 0
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date

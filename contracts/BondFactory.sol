@@ -27,6 +27,8 @@ contract BondFactory {
         uint256 maxBondSupply;
     }
 
+    mapping(uint256 => uint256) public bondIdToPrice;
+
     // Array of all bond addresses ever created
     address[] public allBonds;
 
@@ -63,7 +65,7 @@ contract BondFactory {
         uint256 couponRate,
         uint256 maturityDate,
         uint256 maxBondSupply,
-        uint256 bondPrice
+        uint256 tokenPrice
     );
 
     //------------------------------- Functions ----------------------------------------//
@@ -81,7 +83,7 @@ contract BondFactory {
      * @param _issuer The issuer of the bond
      * @param _stablecoinAddress The address of the stablecoin used to purchase the bond
      * @param _tokensPerBond The number of tokens per bond
-     * @param _bondPrice The price of the bond
+     * @param _tokenPrice The token price or the unit price of the bond
      * @param _maxBondSupply The maximum supply of the bond
      * @return The address of the new TokenizedBond contract
      */
@@ -96,7 +98,7 @@ contract BondFactory {
         address _issuer,
         address _stablecoinAddress,
         uint256 _tokensPerBond,
-        uint256 _bondPrice,
+        uint256 _tokenPrice,
         uint256 _maxBondSupply
     ) public returns (address) {
         /**
@@ -114,7 +116,7 @@ contract BondFactory {
             _issuer,
             _stablecoinAddress,
             _tokensPerBond,
-            _bondPrice,
+            _tokenPrice,
             _maxBondSupply
         );
 
@@ -148,8 +150,22 @@ contract BondFactory {
         // Emit the TokenizedBondCreated event
         emit TokenizedBondCreated(bondAddress, _name, _symbol, _issuer);
 
+        // Update the bond price mapping
+        updateBondPrice(_id, bondAddress);
+
         // Return the address of the new TokenizedBond contract
         return bondAddress;
+    }
+
+    /**
+     * @notice Update the price mapping for a bond
+     * @param bondId The unique identifier of the bond
+     * @param bondAddress The address of the bond contract
+     */
+    function updateBondPrice(uint256 bondId, address bondAddress) internal {
+        TokenizedBond bond = TokenizedBond(bondAddress);
+        (uint256 tokensPerBond, uint256 tokenPrice, ) = bond.fractionInfo();
+        bondIdToPrice[bondId] = tokenPrice * tokensPerBond;
     }
 
     /**
@@ -158,14 +174,14 @@ contract BondFactory {
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date
      * @param _maxBondSupply New maximum bond supply
-     * @param _bondPrice New bond price
+     * @param _tokenPrice New bond price
      */
     function modifyBond(
         address bondAddress,
         uint256 _couponRate,
         uint256 _maturityDate,
         uint256 _maxBondSupply,
-        uint256 _bondPrice
+        uint256 _tokenPrice
     ) public {
         // Ensure the bond exists and is active
         require(
@@ -176,7 +192,12 @@ contract BondFactory {
         TokenizedBond bond = TokenizedBond(bondAddress);
 
         // Call modifyBond on the TokenizedBond contract
-        bond.modifyBond(_couponRate, _maturityDate, _maxBondSupply, _bondPrice);
+        bond.modifyBond(
+            _couponRate,
+            _maturityDate,
+            _maxBondSupply,
+            _tokenPrice
+        );
 
         // Update the registry data if values have changed
         BondRecord storage record = bondRegistry[bondAddress];
@@ -194,12 +215,14 @@ contract BondFactory {
             record.maxBondSupply = _maxBondSupply;
         }
 
+        updateBondPrice(bond.getBondId(), bondAddress);
+
         emit BondModified(
             bondAddress,
             _couponRate,
             _maturityDate,
             _maxBondSupply,
-            _bondPrice
+            _tokenPrice
         );
     }
 
@@ -252,6 +275,26 @@ contract BondFactory {
             "Bond index out of bounds for issuer"
         );
         return issuerToBonds[issuer][index];
+    }
+
+    /**
+     * @notice Get the price of a bond by its ID
+     * @param bondId The unique identifier of the bond
+     * @return The current price of the bond in stablecoin units
+     */
+    function getBondPricebyId(uint256 bondId) public view returns (uint256) {
+        require(allBonds.length > 0, "No bonds created yet");
+
+        for (uint256 i = 0; i < allBonds.length; i++) {
+            TokenizedBond bond = TokenizedBond(allBonds[i]);
+            if (bond.getBondId() == bondId) {
+                (uint256 tokensPerBond, uint256 tokenPrice, ) = bond
+                    .fractionInfo();
+                return tokenPrice * tokensPerBond;
+            }
+        }
+
+        revert("Bond ID not found");
     }
 
     /**
