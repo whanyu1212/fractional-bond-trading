@@ -3,12 +3,24 @@ pragma solidity ^0.8.0;
 
 // Import the TokenizedBond contract
 import "./TokenizedBond.sol";
+import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title BondFactory
  * @notice A contract that handles the creation of instances of tokenized bond by calling methods in TokenizedBond.sol
  */
-contract BondFactory {
+contract BondFactory is ChainlinkClient, ConfirmedOwner {
+    using Strings for uint256;
+    using Chainlink for Chainlink.Request;
+    bytes32 private jobId;
+    uint256 private fee;
+    address private oracle;
+    event RequestPrice(bytes32 indexed requestId, uint256 price);
+    uint256 public latestFetchedPrice;
+
     //------------------------------- State Variables ----------------------------------------//
 
     // metadata for each bond
@@ -27,7 +39,10 @@ contract BondFactory {
         uint256 maxBondSupply;
     }
 
+    //Stre the market price via Chainlink
     mapping(uint256 => uint256) public bondIdToPrice;
+    // Map requestId to bondId
+    mapping(bytes32 => uint256) public requestIdToBondId;
 
     // Array of all bond addresses ever created
     address[] public allBonds;
@@ -67,6 +82,20 @@ contract BondFactory {
         uint256 maxBondSupply,
         uint256 tokenPrice
     );
+
+    /**
+     * @notice Initialize the link token and target oracle
+     * Sepolia Testnet details:
+     * Link Token: 0x779877A7B0D9E8603169DdbD7836e478b4624789
+     * Oracle: 0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD (Chainlink DevRel)
+     * Job ID: ca98366cc7314957b8c012c72f05aeeb
+     */
+    constructor() ConfirmedOwner(msg.sender) {
+        _setChainlinkToken(0x779877A7B0D9E8603169DdbD7836e478b4624789);
+        _setChainlinkOracle(0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD);
+        jobId = "ca98366cc7314957b8c012c72f05aeeb";
+        fee = (1 * LINK_DIVISIBILITY) / 10; // 0.1 LINK
+    }
 
     //------------------------------- Functions ----------------------------------------//
 
@@ -283,8 +312,9 @@ contract BondFactory {
      * @return The current price of the bond in stablecoin units
      */
     function getBondPricebyId(uint256 bondId) public view returns (uint256) {
-        require(allBonds.length > 0, "No bonds created yet");
+        //require(allBonds.length > 0, "No bonds created yet");
 
+        /*
         for (uint256 i = 0; i < allBonds.length; i++) {
             TokenizedBond bond = TokenizedBond(allBonds[i]);
             if (bond.getBondId() == bondId) {
@@ -294,7 +324,56 @@ contract BondFactory {
             }
         }
 
-        revert("Bond ID not found");
+        revert("Bond ID not found");*/
+        return  bondIdToPrice[bondId];
+    }
+
+    /*
+    Request the latest market price via Chainlink, and store the results in bondIdToPrice
+    Be noted that the request is async function, bondIdToPrice will only be upated by the callback function after a period of time.
+    */
+    function requestBondPrice(uint256 bondId) public returns (bytes32 requestId) {
+
+        Chainlink.Request memory req = _buildChainlinkRequest(
+            jobId,
+            address(this),
+            this.fulfill.selector
+        );
+
+        req._add("get", "https://script.google.com/macros/s/AKfycbwElKgGgW3nRNYSpCwKwsDu8Su-ojG6wtOHQAAWFkT-7wDA3RIz-q8hOVa-o875-7ogHQ/exec");
+        //req._add("path", string(abi.encodePacked(bondId)));
+        req._add("path", bondId.toString());
+        int256 timesAmount = 100;
+        req._addInt("times", timesAmount);
+
+        // Sends the request and get the requestId
+        requestId = _sendChainlinkRequest(req, fee);
+
+        // Map the requestId to the bondId
+        requestIdToBondId[requestId] = bondId;
+
+        return requestId;
+    }
+
+    /**
+     * @notice Callback function called by Chainlink oracle to fulfill the request
+     */
+    function fulfill(bytes32 _requestId, uint256 _price) public recordChainlinkFulfillment(_requestId) {
+        emit RequestPrice(_requestId, _price);
+        uint256 bondId = requestIdToBondId[_requestId];
+        latestFetchedPrice = _price;
+        bondIdToPrice[bondId] = _price;
+    }
+
+    /**
+     * Allow withdraw of Link tokens from the contract
+     */
+    function withdrawLink() public onlyOwner {
+        LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress());
+        require(
+            link.transfer(msg.sender, link.balanceOf(address(this))),
+            "Unable to transfer"
+        );
     }
 
     /**
