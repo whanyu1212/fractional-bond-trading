@@ -1,47 +1,36 @@
-import ReactDOM from 'react-dom/client';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 
-import { BrowserRouter } from 'react-router-dom';
+import App from "./App";
+import { ThirdwebProvider } from "@thirdweb-dev/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import App from './App';
+import { WagmiConfig, createClient, configureChains, chain } from "wagmi";
+import { publicProvider } from "wagmi/providers/public";
 
-// const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+const queryClient = new QueryClient();
 
-// root.render(
-//   <BrowserRouter>
-//     <App />
-//   </BrowserRouter>
-// );
+// Create a Wagmi client if needed
+const { chains, provider } = configureChains(
+  [chain.sepolia],
+  [publicProvider()]
+);
+const wagmiClient = createClient({
+  autoConnect: true,
+  provider,
+});
 
-
-import '@rainbow-me/rainbowkit/styles.css'
-
-import { RainbowKitProvider, lightTheme, darkTheme } from '@rainbow-me/rainbowkit'
-import { WagmiProvider } from 'wagmi'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { config } from './config'
-
-
-
-
-const queryClient = new QueryClient()
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  // <React.StrictMode>
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider appInfo={{
-          appName: '@懒人码农',
-          learnMoreUrl: 'https://54web3.cc'
-        }} coolMode showRecentTransactions={true} theme={{
-          lightMode: lightTheme(),
-          darkMode: darkTheme(),
-        }}>
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <WagmiConfig client={wagmiClient}>
+        <ThirdwebProvider activeChain="sepolia" clientId="375c0a5e53f901915a97d33376104ab1">
           <BrowserRouter>
             <App />
           </BrowserRouter>
-          
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  // </React.StrictMode>,
-)
+        </ThirdwebProvider>
+      </WagmiConfig>
+    </QueryClientProvider>
+  </React.StrictMode>
+);

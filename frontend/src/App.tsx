@@ -1,16 +1,13 @@
-import Navigation from './navigation/Navigation';
-import { useAccount } from 'wagmi'
-
+import { Routes, Route } from "react-router-dom";
+import Wallet from "./screens/Wallet/Wallet";
 
 function App() {
-  const { isConnected } = useAccount()
-  console.log('isConnected', isConnected)
-
   return (
-    <div className="App">
-        <Navigation />
-    </div>
-  )
+    <Routes>
+      <Route path="/wallet" element={<Wallet />} />
+      {/* Other routes */}
+    </Routes>
+  );
 }
 
-export default App
+export default App;
