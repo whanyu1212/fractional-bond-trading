@@ -19,7 +19,7 @@ contract MockStablecoin is ERC20, Ownable {
      * @param to The address to which the tokens will be minted
      * @param amount The amount of tokens to mint
      */
-    function mint(address to, uint256 amount) public onlyOwner {
+    function mint(address to, uint256 amount) public {
         _mint(to, amount);
     }
 
