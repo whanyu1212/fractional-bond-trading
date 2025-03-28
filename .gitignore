@@ -55,4 +55,5 @@ build/
 # Lock.sol
 
 # add pycache
-__pycache__/
+*.env
+frontend/.env
