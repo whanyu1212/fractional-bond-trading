@@ -30,11 +30,6 @@ export default function MyAccount() {
             Browse available bonds and manage your trades.
           </p>
         </div>
-        
-        <div className="bg-card rounded-lg border shadow-sm p-6">
-          <h2 className="text-xl font-semibold mb-4">Available Bonds</h2>
-          <BondCard />
-        </div>
       </div>
     </div>
   );
