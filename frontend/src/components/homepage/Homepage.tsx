@@ -1,5 +1,4 @@
-"use client"; // 使用 Next.js 的前端导航必须加
-
+"use client";
 import { useRouter } from "next/navigation";
 import styles from "./Homepage.module.css";
 
@@ -15,16 +14,22 @@ const Homepage = () => {
           community to access institutional-grade bonds with as little as $100.
         </p>
         <div className={styles["hero-buttons"]}>
-          <button className={styles["primary-button"]} onClick={() => router.push("/account")}>
+          <button
+            className={styles["primary-button"]}
+            onClick={() => router.push("/signin")}
+          >
             Start Investing
           </button>
-          <button className={styles["secondary-button"]} onClick={() => router.push("/about")}>
+          <button
+            className={styles["secondary-button"]}
+            onClick={() => router.push("/about")}
+          >
             Learn More
           </button>
         </div>
       </header>
 
-      <section className={styles.section}>
+      <section className={styles.section} id="why-bondchain">
         <h2>Why BondChain?</h2>
         <div className={`${styles["grid-container"]} ${styles["single-line"]}`}>
           {[
@@ -61,8 +66,14 @@ const Homepage = () => {
 
       <section className={styles.section}>
         <h2>Start Your Investment Journey</h2>
-        <p>Join us and experience safe, efficient tokenized bond investment with as little as $100.</p>
-        <button className={styles["cta-button"]} onClick={() => router.push("/account")}>
+        <p>
+          Join us and experience safe, efficient tokenized bond investment with
+          as little as $100.
+        </p>
+        <button
+          className={styles["cta-button"]}
+          onClick={() => router.push("/signup")}
+        >
           Register Now
         </button>
       </section>
