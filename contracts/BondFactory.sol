@@ -435,16 +435,24 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     }
 
     /**
-     * @notice Get details of an active bond by its index in the activeBonds array
+     * @notice Get complete details of an active bond by its index in the activeBonds array
      * @param index Array index
      * @return bondAddress The address of the bond contract
      * @return name The name of the bond
      * @return symbol The symbol of the bond
-     * @return issuer The issuer of the bond
-     * @return maturityDate The maturity date of the bond
+     * @return bondId The unique identifier of the bond
      * @return faceValue The face value of the bond
+     * @return couponRate The coupon rate of the bond
+     * @return couponFrequency The coupon frequency of the bond
+     * @return maturityDate The maturity date of the bond
+     * @return issuer The issuer of the bond
+     * @return stablecoinAddress The address of the stablecoin used for payments
+     * @return tokensPerBond The number of tokens per bond
+     * @return tokenPrice The price of each token
+     * @return maxBondSupply The maximum supply of the bond
+     * @return creationTimestamp When the bond was created
      */
-    function getActiveBondDetails(
+    function getActiveBondDetailsByIndex(
         uint256 index
     )
         public
@@ -453,22 +461,201 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             address bondAddress,
             string memory name,
             string memory symbol,
-            address issuer,
+            uint256 bondId,
+            uint256 faceValue,
+            uint256 couponRate,
+            uint256 couponFrequency,
             uint256 maturityDate,
-            uint256 faceValue
+            address issuer,
+            address stablecoinAddress,
+            uint256 tokensPerBond,
+            uint256 tokenPrice,
+            uint256 maxBondSupply,
+            uint256 creationTimestamp
         )
     {
         require(index < activeBonds.length, "Index out of bounds");
         address addr = activeBonds[index];
         BondRecord storage record = bondRegistry[addr];
 
+        // Get the bond contract to retrieve additional parameters
+        TokenizedBond bond = TokenizedBond(addr);
+        uint256 id = bond.getBondId();
+        uint256 couponFreq = bond.getCouponFrequency();
+        address stablecoin = bond.getStablecoinAddress();
+        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
+
+        // Return full details
         return (
             addr,
             record.name,
             record.symbol,
-            record.issuer,
+            id,
+            record.faceValue,
+            record.couponRate,
+            couponFreq,
             record.maturityDate,
-            record.faceValue
+            record.issuer,
+            stablecoin,
+            tokens,
+            price,
+            record.maxBondSupply,
+            record.creationTimestamp
+        );
+    }
+    /**
+     * @notice Get complete details of an active bond by its ID
+     * @param bondId The unique identifier of the bond
+     * @return bondAddress The address of the bond contract
+     * @return name The name of the bond
+     * @return symbol The symbol of the bond
+     * @return returnBondId The unique identifier of the bond
+     * @return faceValue The face value of the bond
+     * @return couponRate The coupon rate of the bond
+     * @return couponFrequency The coupon frequency of the bond
+     * @return maturityDate The maturity date of the bond
+     * @return issuer The issuer of the bond
+     * @return stablecoinAddress The address of the stablecoin used for payments
+     * @return tokensPerBond The number of tokens per bond
+     * @return tokenPrice The price of each token
+     * @return maxBondSupply The maximum supply of the bond
+     * @return creationTimestamp When the bond was created
+     */
+    function getActiveBondDetailsByBondId(
+        uint256 bondId
+    )
+        public
+        view
+        returns (
+            address bondAddress,
+            string memory name,
+            string memory symbol,
+            uint256 returnBondId, // renamed to avoid confusion
+            uint256 faceValue,
+            uint256 couponRate,
+            uint256 couponFrequency,
+            uint256 maturityDate,
+            address issuer,
+            address stablecoinAddress,
+            uint256 tokensPerBond,
+            uint256 tokenPrice,
+            uint256 maxBondSupply,
+            uint256 creationTimestamp
+        )
+    {
+        // Find the bond contract with this ID
+        address foundAddress = address(0);
+
+        for (uint256 i = 0; i < activeBonds.length; i++) {
+            TokenizedBond currentBond = TokenizedBond(activeBonds[i]);
+            if (currentBond.getBondId() == bondId) {
+                foundAddress = activeBonds[i];
+                break;
+            }
+        }
+
+        require(
+            foundAddress != address(0),
+            "Bond ID not found in active bonds"
+        );
+
+        BondRecord storage record = bondRegistry[foundAddress];
+        TokenizedBond bond = TokenizedBond(foundAddress);
+
+        // Get additional parameters from the bond contract
+        uint256 couponFreq = bond.getCouponFrequency();
+        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
+        address stablecoin = bond.getStablecoinAddress();
+
+        // Return full details
+        return (
+            foundAddress,
+            record.name,
+            record.symbol,
+            bondId,
+            record.faceValue,
+            record.couponRate,
+            couponFreq,
+            record.maturityDate,
+            record.issuer,
+            stablecoin,
+            tokens,
+            price,
+            record.maxBondSupply,
+            record.creationTimestamp
+        );
+    }
+
+    /**
+     * @notice Get complete details of a bond by its contract address
+     * @param bondAddress Address of the bond contract
+     * @return name The name of the bond
+     * @return symbol The symbol of the bond
+     * @return bondId The unique identifier of the bond
+     * @return faceValue The face value of the bond
+     * @return couponRate The coupon rate of the bond
+     * @return couponFrequency The coupon frequency of the bond
+     * @return maturityDate The maturity date of the bond
+     * @return issuer The issuer of the bond
+     * @return stablecoinAddress The address of the stablecoin used for payments
+     * @return tokensPerBond The number of tokens per bond
+     * @return tokenPrice The price of each token
+     * @return maxBondSupply The maximum supply of the bond
+     * @return creationTimestamp When the bond was created
+     * @return isActive Whether the bond is currently active
+     */
+    function getBondDetailsByAddress(
+        address bondAddress
+    )
+        public
+        view
+        returns (
+            string memory name,
+            string memory symbol,
+            uint256 bondId,
+            uint256 faceValue,
+            uint256 couponRate,
+            uint256 couponFrequency,
+            uint256 maturityDate,
+            address issuer,
+            address stablecoinAddress,
+            uint256 tokensPerBond,
+            uint256 tokenPrice,
+            uint256 maxBondSupply,
+            uint256 creationTimestamp,
+            bool isActive
+        )
+    {
+        require(
+            bondRegistry[bondAddress].bondAddress != address(0),
+            "Bond does not exist"
+        );
+
+        BondRecord storage record = bondRegistry[bondAddress];
+        TokenizedBond bond = TokenizedBond(bondAddress);
+
+        // Get additional parameters from the bond contract
+        uint256 id = bond.getBondId();
+        uint256 couponFreq = bond.getCouponFrequency();
+        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
+        address stablecoin = bond.getStablecoinAddress();
+
+        // Return full details
+        return (
+            record.name,
+            record.symbol,
+            id,
+            record.faceValue,
+            record.couponRate,
+            couponFreq,
+            record.maturityDate,
+            record.issuer,
+            stablecoin,
+            tokens,
+            price,
+            record.maxBondSupply,
+            record.creationTimestamp,
+            record.active
         );
     }
 
