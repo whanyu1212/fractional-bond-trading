@@ -325,22 +325,26 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         }
 
         revert("Bond ID not found");*/
-        return  bondIdToPrice[bondId];
+        return bondIdToPrice[bondId];
     }
 
     /*
     Request the latest market price via Chainlink, and store the results in bondIdToPrice
     Be noted that the request is async function, bondIdToPrice will only be upated by the callback function after a period of time.
     */
-    function requestBondPrice(uint256 bondId) public returns (bytes32 requestId) {
-
+    function requestBondPrice(
+        uint256 bondId
+    ) public returns (bytes32 requestId) {
         Chainlink.Request memory req = _buildChainlinkRequest(
             jobId,
             address(this),
             this.fulfill.selector
         );
 
-        req._add("get", "https://script.google.com/macros/s/AKfycbwElKgGgW3nRNYSpCwKwsDu8Su-ojG6wtOHQAAWFkT-7wDA3RIz-q8hOVa-o875-7ogHQ/exec");
+        req._add(
+            "get",
+            "https://script.google.com/macros/s/AKfycbwElKgGgW3nRNYSpCwKwsDu8Su-ojG6wtOHQAAWFkT-7wDA3RIz-q8hOVa-o875-7ogHQ/exec"
+        );
         //req._add("path", string(abi.encodePacked(bondId)));
         req._add("path", bondId.toString());
         int256 timesAmount = 100;
@@ -358,7 +362,10 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     /**
      * @notice Callback function called by Chainlink oracle to fulfill the request
      */
-    function fulfill(bytes32 _requestId, uint256 _price) public recordChainlinkFulfillment(_requestId) {
+    function fulfill(
+        bytes32 _requestId,
+        uint256 _price
+    ) public recordChainlinkFulfillment(_requestId) {
         emit RequestPrice(_requestId, _price);
         uint256 bondId = requestIdToBondId[_requestId];
         latestFetchedPrice = _price;
@@ -517,35 +524,35 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         bond.redeemFor(investor);
     }
 
-    /**
-     * @notice Add addresses to whitelist for a bond
-     * @param bondAddress Address of the TokenizedBond
-     * @param accounts Addresses to whitelist
-     */
-    function addToWhitelist(
-        address bondAddress,
-        address[] calldata accounts
-    ) external {
-        require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.addToWhitelist(accounts);
-    }
+    // /**
+    //  * @notice Add addresses to whitelist for a bond
+    //  * @param bondAddress Address of the TokenizedBond
+    //  * @param accounts Addresses to whitelist
+    //  */
+    // function addToWhitelist(
+    //     address bondAddress,
+    //     address[] calldata accounts
+    // ) external {
+    //     require(bondRegistry[bondAddress].active, "Bond not active");
+    //     TokenizedBond bond = TokenizedBond(bondAddress);
+    //     bond.addToWhitelist(accounts);
+    // }
 
-    /**
-     * @notice Set KYC status for accounts
-     * @param bondAddress Address of the TokenizedBond
-     * @param accounts Addresses to update
-     * @param approved KYC approval status
-     */
-    function setKycStatus(
-        address bondAddress,
-        address[] calldata accounts,
-        bool approved
-    ) external {
-        require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.setKycStatus(accounts, approved);
-    }
+    // /**
+    //  * @notice Set KYC status for accounts
+    //  * @param bondAddress Address of the TokenizedBond
+    //  * @param accounts Addresses to update
+    //  * @param approved KYC approval status
+    //  */
+    // function setKycStatus(
+    //     address bondAddress,
+    //     address[] calldata accounts,
+    //     bool approved
+    // ) external {
+    //     require(bondRegistry[bondAddress].active, "Bond not active");
+    //     TokenizedBond bond = TokenizedBond(bondAddress);
+    //     bond.setKycStatus(accounts, approved);
+    // }
 
     /**
      * @notice Mint new bonds to the specified address

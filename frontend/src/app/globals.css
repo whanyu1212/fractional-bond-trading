@@ -42,6 +42,7 @@ body {
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -76,13 +77,89 @@ body {
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .flex {
+    display: flex;
+  }
+
+  .flex-center {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .full-height {
+    height: 100vh;
+  }
+
+  .login {
+    @apply bg-white rounded-xl shadow-md p-8 w-full max-w-lg;
+  }
+
+  .form-logo img {
+    @apply w-20 mx-auto mb-4;
+  }
+
+  .form-title {
+    @apply text-2xl font-bold text-center mb-2;
+  }
+
+  .form-desc {
+    @apply text-sm text-center text-gray-600 mb-6;
+  }
+
+  .form {
+    @apply flex flex-col gap-4;
+  }
+
+  .form-elements {
+    @apply flex flex-col gap-4;
+  }
+
+  .form-line {
+    @apply flex flex-col;
+  }
+
+  .full-width {
+    @apply w-full;
+  }
+
+  .center {
+    @apply text-center;
+  }
+
+  .right {
+    @apply text-right;
+  }
+
+  .box {
+    @apply bg-white p-6 rounded-lg shadow-lg;
+  }
+
+  .button {
+    @apply px-4 py-2 rounded-md text-white font-semibold cursor-pointer;
+  }
+
+  .button-purple {
+    @apply bg-purple-600 hover:bg-purple-700;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"] {
+    @apply w-full border border-gray-300 rounded-md p-2 text-sm;
+  }
+
+  a {
+    @apply text-blue-600 hover:underline;
   }
 }

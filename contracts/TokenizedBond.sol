@@ -343,8 +343,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param tokenAmount The amount of tokens to purchase
      */
     function purchaseBondFor(address buyer, uint256 tokenAmount) external {
-        require(whitelist[buyer], "Buyer not whitelisted");
-        require(kycApproved[buyer], "Buyer not KYC approved");
+        // require(whitelist[buyer], "Buyer not whitelisted");
+        // require(kycApproved[buyer], "Buyer not KYC approved");
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond no longer for sale"
@@ -371,8 +371,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param claimer The address for which to claim coupon payments.
      */
     function claimCouponFor(address claimer) external {
-        require(whitelist[claimer], "Claimer not whitelisted");
-        require(kycApproved[claimer], "Claimer not KYC approved");
+        // require(whitelist[claimer], "Claimer not whitelisted");
+        // require(kycApproved[claimer], "Claimer not KYC approved");
         require(balanceOf(claimer) > 0, "No bonds held");
         require(
             block.timestamp >=
@@ -395,8 +395,8 @@ contract TokenizedBond is ERC20, Ownable {
      * @param redeemer The address to which the redemption amount will be transferred
      */
     function redeemFor(address redeemer) external {
-        require(whitelist[redeemer], "Redeemer not whitelisted");
-        require(kycApproved[redeemer], "Redeemer not KYC approved");
+        // require(whitelist[redeemer], "Redeemer not whitelisted");
+        // require(kycApproved[redeemer], "Redeemer not KYC approved");
         require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
         uint256 bondTokens = balanceOf(redeemer);
         require(bondTokens > 0, "No bonds to redeem");
@@ -423,20 +423,20 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 stablecoinAmount
     ) external {
         // Verify that caller is one of the participants
-        require(
-            msg.sender == from || msg.sender == to,
-            "Not authorized for swap"
-        );
+        // require(
+        //     msg.sender == from || msg.sender == to,
+        //     "Not authorized for swap"
+        // );
 
         // Check if both parties are whitelisted and KYC approved
-        require(
-            whitelist[from] && whitelist[to],
-            "Both parties must be whitelisted"
-        );
-        require(
-            kycApproved[from] && kycApproved[to],
-            "Both parties must be KYC approved"
-        );
+        // require(
+        //     whitelist[from] && whitelist[to],
+        //     "Both parties must be whitelisted"
+        // );
+        // require(
+        //     kycApproved[from] && kycApproved[to],
+        //     "Both parties must be KYC approved"
+        // );
 
         // Check if the bond has matured
         require(
