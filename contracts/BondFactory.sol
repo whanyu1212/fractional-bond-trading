@@ -54,7 +54,10 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     mapping(address => BondRecord) public bondRegistry;
 
     // Mapping from issuer address to their bonds
-    mapping(address => address[]) public issuerToBonds;
+    // mapping(address => address[]) public issuerToBonds;
+    mapping(address => uint256[]) public issuerToBondIds;
+
+    mapping(uint256 => address) public bondIdToAddress;
 
     //------------------------------- Events ----------------------------------------//
 
@@ -169,7 +172,9 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         bondRegistry[bondAddress] = record;
         allBonds.push(bondAddress);
         activeBonds.push(bondAddress);
-        issuerToBonds[_issuer].push(bondAddress);
+        // issuerToBonds[_issuer].push(bondAddress);
+        issuerToBondIds[_issuer].push(_id);
+        bondIdToAddress[_id] = bondAddress;
 
         // Transfer ownership of the bond to the sender if they're the issuer
         if (msg.sender == _issuer) {
@@ -267,14 +272,14 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     }
 
     /**
-     * @notice Get the most recently created bond by a specific issuer
+     * @notice Get the most recently created bond ID by issuer
      * @param issuer Address of the issuer
-     * @return Address of the most recently created bond by the issuer
+     * @return ID of the most recently created bond by the issuer
      */
     function getLatestBondByIssuer(
         address issuer
-    ) public view returns (address) {
-        address[] storage issuerBonds = issuerToBonds[issuer];
+    ) public view returns (uint256) {
+        uint256[] storage issuerBonds = issuerToBondIds[issuer];
         require(issuerBonds.length > 0, "No bonds created by this issuer");
         return issuerBonds[issuerBonds.length - 1];
     }
@@ -290,20 +295,28 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     }
 
     /**
-     * @notice Get a bond address by issuer and index
+     * @notice Get a bond ID and address by issuer and index
      * @param issuer Address of the issuer
      * @param index Index in the issuer's creation sequence
-     * @return Address of the bond at the specified index
+     * @return bondId The unique identifier of the bond
+     * @return bondAddress Address of the bond at the specified index
      */
     function getIssuerBondByIndex(
         address issuer,
         uint256 index
-    ) public view returns (address) {
+    ) public view returns (uint256 bondId, address bondAddress) {
         require(
-            index < issuerToBonds[issuer].length,
+            index < issuerToBondIds[issuer].length,
             "Bond index out of bounds for issuer"
         );
-        return issuerToBonds[issuer][index];
+
+        // Get the bond ID at the specified index
+        bondId = issuerToBondIds[issuer][index];
+
+        // Get the address mapped to this bond ID
+        bondAddress = bondIdToAddress[bondId];
+
+        return (bondId, bondAddress);
     }
 
     /**
@@ -415,14 +428,15 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     }
 
     /**
-     * @notice Get bonds created by a specific issuer
+     * @notice Get all bond IDs created by a specific issuer
      * @param issuer Address of the issuer
-     * @return Array of bond addresses created by the issuer
+     * @return Array of bond IDs created by the issuer
+     * @dev This function returns the bond IDs associated with the issuer
      */
     function getBondsByIssuer(
         address issuer
-    ) public view returns (address[] memory) {
-        return issuerToBonds[issuer];
+    ) public view returns (uint256[] memory) {
+        return issuerToBondIds[issuer];
     }
 
     /**
@@ -431,7 +445,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
      * @return Number of bonds created by the issuer
      */
     function getIssuerBondCount(address issuer) public view returns (uint256) {
-        return issuerToBonds[issuer].length;
+        return issuerToBondIds[issuer].length;
     }
 
     /**
