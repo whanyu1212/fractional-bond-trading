@@ -137,6 +137,8 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             Create a new TokenizedBond contract by 
             calling the constructor in TokenizedBond.sol
          */
+
+        uint256 initialSupply = _tokensPerBond * _maxBondSupply;
         TokenizedBond newBond = new TokenizedBond(
             _name,
             _symbol,
@@ -149,7 +151,8 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             _stablecoinAddress,
             _tokensPerBond,
             _tokenPrice,
-            _maxBondSupply
+            _maxBondSupply,
+            initialSupply
         );
 
         address bondAddress = address(newBond);
