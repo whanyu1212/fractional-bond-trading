@@ -19,15 +19,29 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-type Bond = {
-    index: number;
-    bondAddress: string;
-    name: string;
-    symbol: string;
-    issuer: string;
-    maturityDate: string;
-    faceValue: number;
-};
+
+
+// Define Bond type
+interface Bond {
+  index: number;
+  bondAddress: string;
+  name: string;
+  symbol: string;
+  bondId: string;
+  faceValue: number;
+  couponRate: number;
+  couponFrequency: number;
+  maturityDate: string;
+  issuer: string;
+  stablecoinAddress: string;
+  tokensPerBond: number;
+  tokenPrice: number;
+  maxBondSupply: number;
+  creationTimestamp: number;
+}
+
+// Assuming bondContract is defined elsewhere
+// import { bondContract } from './contracts';
 
 export function BondCard() {
   const [bonds, setBonds] = useState<Bond[]>([]);
@@ -37,11 +51,11 @@ export function BondCard() {
   const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // Create contract reads for the first 8 bonds
-  const bondRequests = Array.from({ length: 8 }, (_, i) => {
+  // Create contract reads for the first 3 bonds
+  const bondRequests = Array.from({ length: 4 }, (_, i) => {
     return useReadContract({
       contract: bondContract,
-      method: "function getActiveBondDetails(uint256 index) view returns (address bondAddress, string name, string symbol, address issuer, uint256 maturityDate, uint256 faceValue)",
+      method: "function getActiveBondDetailsByIndex(uint256 index) view returns (address bondAddress, string name, string symbol, uint256 bondId, uint256 faceValue, uint256 couponRate, uint256 couponFrequency, uint256 maturityDate, address issuer, address stablecoinAddress, uint256 tokensPerBond, uint256 tokenPrice, uint256 maxBondSupply, uint256 creationTimestamp)",
       params: [BigInt(i)],
     });
   });
@@ -61,9 +75,17 @@ export function BondCard() {
               bondAddress: req.data[0],
               name: req.data[1],
               symbol: req.data[2],
-              issuer: req.data[3],
-              maturityDate: new Date(Number(req.data[4]) * 1000).toLocaleDateString(),
-              faceValue: Number(req.data[5]) / 1e18, // Assuming 18 decimals
+              bondId: req.data[3].toString(),
+              faceValue: Number(req.data[4])/1e6, // Assuming 18 decimals
+              couponRate: Number(req.data[5]) / 100, // Convert basis points to percentage
+              couponFrequency: Number(req.data[6]),
+              maturityDate: new Date(Number(req.data[7]) * 1000).toLocaleDateString(),
+              issuer: req.data[8],
+              stablecoinAddress: req.data[9],
+              tokensPerBond: Number(req.data[10]),
+              tokenPrice: Number(req.data[11]) / 1e6,
+              maxBondSupply: Number(req.data[12])/1e6,
+              creationTimestamp: Number(req.data[13])
             };
           }
           return null;
@@ -74,7 +96,7 @@ export function BondCard() {
       setFilteredBonds(bondsList);
       setLoading(false);
     }
-  }, bondRequests.map(req => req.isPending));
+  }, [bondRequests.map(req => req.isPending).join()]); // Fixed dependency array
 
   // Handle search by index
   const handleSearch = () => {
@@ -120,13 +142,16 @@ export function BondCard() {
       <CardContent>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="text-muted-foreground">Issuer</div>
-          <div className="font-medium truncate">{bond.issuer}</div>
+          <div className="font-medium truncate">{formatAddress(bond.issuer)}</div>
           
           <div className="text-muted-foreground">Maturity Date</div>
           <div className="font-medium">{bond.maturityDate}</div>
           
           <div className="text-muted-foreground">Face Value</div>
           <div className="font-medium">{bond.faceValue} USDC</div>
+          
+          <div className="text-muted-foreground">Coupon Rate</div>
+          <div className="font-medium">{bond.couponRate}%</div>
         </div>
       </CardContent>
       <CardFooter>
@@ -247,6 +272,46 @@ export function BondCard() {
                 <div className="space-y-1">
                   <p className="font-medium text-sm">Face Value</p>
                   <p className="text-sm text-muted-foreground">{selectedBond.faceValue} USDC</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Coupon Rate</p>
+                  <p className="text-sm text-muted-foreground">{selectedBond.couponRate}%</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Coupon Frequency</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedBond.couponFrequency === 1 ? 'Annual' : 
+                    selectedBond.couponFrequency === 2 ? 'Semi-annual' : 
+                    selectedBond.couponFrequency === 4 ? 'Quarterly' : 
+                    selectedBond.couponFrequency === 12 ? 'Monthly' : 
+                    `${selectedBond.couponFrequency} times per year`}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Token Details</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedBond.tokensPerBond} tokens per bond at {selectedBond.tokenPrice} USDC each
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Maximum Supply</p>
+                  <p className="text-sm text-muted-foreground">{selectedBond.maxBondSupply} bonds</p>
                 </div>
               </div>
             </div>
