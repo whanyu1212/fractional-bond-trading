@@ -5,6 +5,7 @@ import { base } from "thirdweb/chains";
 
 export const bondFactoryAddress = "0x6d009Ec19f8c90b52d0229f4Cd34686465bEf48c";
 export const mockStableCoinAddress = "0x4b84D11FAD4dD6fb6277E055D0892023456eeCFc";
+// export const BondMarketPlaceAddress = "0xd5B44461c1Ac4fD686b5322691D8eB82636bC9f9";
 const sepoliaTestnet = defineChain(11155111);
 
 export const bondContract = getContract({

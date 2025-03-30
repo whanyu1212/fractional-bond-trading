@@ -112,7 +112,8 @@ contract TokenizedBond is ERC20, Ownable {
         address _stablecoinAddress,
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
-        uint256 _maxBondSupply
+        uint256 _maxBondSupply,
+        uint256 _initialSupply
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
             name: _name,
@@ -137,6 +138,8 @@ contract TokenizedBond is ERC20, Ownable {
         });
 
         stablecoin = IERC20(_stablecoinAddress);
+
+        _mint(_issuer, _initialSupply);
     }
 
     /**
@@ -153,6 +156,22 @@ contract TokenizedBond is ERC20, Ownable {
      */
     function getBondId() public view returns (uint256) {
         return bondInfo.bondId;
+    }
+
+    /**
+     * @notice Get the coupon frequency of the bond
+     * @return The coupon frequency in number of payments per year
+     */
+    function getCouponFrequency() public view returns (uint256) {
+        return bondInfo.couponFrequency;
+    }
+
+    /**
+     * @notice Get the stablecoin address used for this bond
+     * @return The address of the stablecoin contract
+     */
+    function getStablecoinAddress() public view returns (address) {
+        return address(stablecoin);
     }
 
     /**
