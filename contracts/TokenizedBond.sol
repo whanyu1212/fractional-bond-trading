@@ -112,7 +112,8 @@ contract TokenizedBond is ERC20, Ownable {
         address _stablecoinAddress,
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
-        uint256 _maxBondSupply
+        uint256 _maxBondSupply,
+        uint256 _initialSupply
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
             name: _name,
@@ -137,6 +138,8 @@ contract TokenizedBond is ERC20, Ownable {
         });
 
         stablecoin = IERC20(_stablecoinAddress);
+
+        _mint(_issuer, _initialSupply);
     }
 
     /**
