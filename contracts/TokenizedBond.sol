@@ -156,6 +156,22 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
+     * @notice Get the coupon frequency of the bond
+     * @return The coupon frequency in number of payments per year
+     */
+    function getCouponFrequency() public view returns (uint256) {
+        return bondInfo.couponFrequency;
+    }
+
+    /**
+     * @notice Get the stablecoin address used for this bond
+     * @return The address of the stablecoin contract
+     */
+    function getStablecoinAddress() public view returns (address) {
+        return address(stablecoin);
+    }
+
+    /**
      * @notice Modify a subset of bond parameters (only callable by owner/issuer), must be bigger than 0
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date
