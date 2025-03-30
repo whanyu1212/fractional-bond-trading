@@ -221,10 +221,10 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         uint256 _tokenPrice
     ) public {
         // Ensure the bond exists and is active
-        require(
-            bondRegistry[bondAddress].active,
-            "Bond is not active or doesn't exist"
-        );
+        // require(
+        //     bondRegistry[bondAddress].active,
+        //     "Bond is not active or doesn't exist"
+        // );
 
         TokenizedBond bond = TokenizedBond(bondAddress);
 
