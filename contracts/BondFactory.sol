@@ -699,7 +699,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         address investor,
         uint256 bondAmount
     ) external {
-        require(bondRegistry[bondAddress].active, "Bond not active");
+        // require(bondRegistry[bondAddress].active, "Bond not active");
         TokenizedBond bond = TokenizedBond(bondAddress);
         bond.purchaseBondFor(investor, bondAmount);
     }
@@ -710,7 +710,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
      * @param investor Address of the investor
      */
     function claimCoupon(address bondAddress, address investor) external {
-        require(bondRegistry[bondAddress].active, "Bond not active");
+        // require(bondRegistry[bondAddress].active, "Bond not active");
         TokenizedBond bond = TokenizedBond(bondAddress);
         bond.claimCouponFor(investor);
     }
@@ -766,7 +766,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         address to,
         uint256 bondAmount
     ) external {
-        require(bondRegistry[bondAddress].active, "Bond not active");
+        // require(bondRegistry[bondAddress].active, "Bond not active");
         TokenizedBond bond = TokenizedBond(bondAddress);
         bond.mintBond(to, bondAmount);
     }
