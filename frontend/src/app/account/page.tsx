@@ -10,27 +10,35 @@ import { Navbar } from "@/components/navbar";
 import { BondCard } from "@/components/bond-card";
 import { UserBonds } from "@/components/user-bond";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { coinContract } from "@/constants/contract";
+// Import coinContract (for mint & balance) and bondContract (for bond actions)
+import { coinContract, bondContract } from "@/constants/contract";
 
-// Define the Bond type (adjust properties as needed)
+// Adjust Bond interface to include the bondAddress property
 interface Bond {
-  id: number;
+  bondAddress: string; // The actual address of the bond contract
   name: string;
   // add other fields if needed (e.g. maturityDate, faceValue, etc.)
 }
 
 interface BondItemProps {
   bond: Bond;
-  account: any; // Adjust type if available
+  account: any; // Adjust type if you have a specific type for the account
 }
 
-// A component to render each bond along with a transfer input/button.
+// BondItem component now calls redeemBonds(bondAddress, investor) and transferBond(bondAddress, newOwner)
 function BondItem({ bond, account }: BondItemProps) {
+  // Transfer state
   const [newOwnerAddress, setNewOwnerAddress] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferTxResult, setTransferTxResult] = useState<any>(null);
   const [showTransferResult, setShowTransferResult] = useState(false);
 
+  // Redeem state
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [redeemTxResult, setRedeemTxResult] = useState<any>(null);
+  const [showRedeemResult, setShowRedeemResult] = useState(false);
+
+  // Handle transferBond
   const handleTransferBond = async () => {
     if (!newOwnerAddress) {
       toast({
@@ -42,11 +50,10 @@ function BondItem({ bond, account }: BondItemProps) {
     }
     try {
       setIsTransferring(true);
-      // Prepare a call to the contract's transferBond function
       const transaction = await prepareContractCall({
-        contract: coinContract,
-        method: "function transferBond(uint256 bondId, address newOwner)",
-        params: [BigInt(bond.id), newOwnerAddress],
+        contract: bondContract,
+        method: "function transferBond(address bondAddress, address newOwner)",
+        params: [bond.bondAddress, newOwnerAddress], // bondAddress from bond, newOwner from input
       });
       const result = await sendTransaction({
         transaction,
@@ -71,17 +78,51 @@ function BondItem({ bond, account }: BondItemProps) {
     }
   };
 
+  // Handle redeemBonds
+  const handleRedeemBond = async () => {
+    try {
+      setIsRedeeming(true);
+      const transaction = await prepareContractCall({
+        contract: bondContract,
+        method: "function redeemBonds(address bondAddress, address investor)",
+        params: [bond.bondAddress, account.address], // bondAddress from bond, investor is the user's address
+      });
+      const result = await sendTransaction({
+        transaction,
+        account,
+      });
+      setRedeemTxResult(result);
+      setShowRedeemResult(true);
+      setIsRedeeming(false);
+      toast({
+        title: "Bond redeemed successfully!",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error redeeming bond:", error);
+      setIsRedeeming(false);
+      toast({
+        title: "Failed to redeem bond",
+        description: "See console for details",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="border p-4 rounded-lg mb-4">
       <div>
         <p>
-          <strong>ID:</strong> {bond.id}
+          <strong>Bond Address:</strong> {bond.bondAddress}
         </p>
         <p>
           <strong>Name:</strong> {bond.name}
         </p>
       </div>
+
+      {/* Transfer & Redeem */}
       <div className="mt-2">
+        {/* Transfer */}
         <input
           type="text"
           placeholder="New owner address"
@@ -92,22 +133,43 @@ function BondItem({ bond, account }: BondItemProps) {
         <button
           onClick={handleTransferBond}
           disabled={isTransferring}
-          className="bg-blue-600 text-white p-2 rounded w-full"
+          className="bg-blue-600 text-white p-2 rounded w-full mb-2"
         >
           {isTransferring ? "Transferring..." : "Transfer Bond"}
         </button>
+
+        {/* Redeem */}
+        <button
+          onClick={handleRedeemBond}
+          disabled={isRedeeming}
+          className="bg-green-600 text-white p-2 rounded w-full"
+        >
+          {isRedeeming ? "Redeeming..." : "Redeem Bond"}
+        </button>
       </div>
+
+      {/* Transfer Result */}
       {showTransferResult && (
         <div className="mt-2 p-2 border rounded bg-gray-100">
-          <p>
-            Transfer Status: {transferTxResult?.status || "Success"}
-          </p>
-          <p>
-            Tx Hash: {transferTxResult?.transactionHash || "N/A"}
-          </p>
+          <p>Transfer Status: {transferTxResult?.status || "Success"}</p>
+          <p>Tx Hash: {transferTxResult?.transactionHash || "N/A"}</p>
           <button
             onClick={() => setShowTransferResult(false)}
             className="text-blue-600 underline"
+          >
+            Close
+          </button>
+        </div>
+      )}
+
+      {/* Redeem Result */}
+      {showRedeemResult && (
+        <div className="mt-2 p-2 border rounded bg-gray-100">
+          <p>Redeem Status: {redeemTxResult?.status || "Success"}</p>
+          <p>Tx Hash: {redeemTxResult?.transactionHash || "N/A"}</p>
+          <button
+            onClick={() => setShowRedeemResult(false)}
+            className="text-green-600 underline"
           >
             Close
           </button>
@@ -119,12 +181,14 @@ function BondItem({ bond, account }: BondItemProps) {
 
 export default function Account() {
   const account = useActiveAccount();
+
+  // ------------------- MINT & BALANCE (coinContract) -------------------
   const [amount, setAmount] = useState("");
   const [isMinting, setIsMinting] = useState(false);
   const [transactionResult, setTransactionResult] = useState<any>(null);
   const [showResult, setShowResult] = useState(false);
 
-  // Handle minting coins
+  // Mint coins
   const handleMintCoins = async () => {
     if (!account || !amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       toast({
@@ -141,10 +205,7 @@ export default function Account() {
         method: "function mint(address to, uint256 amount)",
         params: [account.address, BigInt(amount)],
       });
-      const result = await sendTransaction({
-        transaction,
-        account,
-      });
+      const result = await sendTransaction({ transaction, account });
       setTransactionResult(result);
       setShowResult(true);
       setIsMinting(false);
@@ -164,22 +225,22 @@ export default function Account() {
     }
   };
 
-  // Read user's balance
+  // Read user's coin balance
   const { data: balance, isPending: isBalanceLoading } = useReadContract({
     contract: coinContract,
     method: "function balanceOf(address account) view returns (uint256)",
     params: [account?.address ?? ""],
   });
 
-  // Read bonds owned by the current account using getBondsByIssuer.
-  // (Assumes the contract returns an array of Bond objects.)
+  // ------------------- BOND READ & ACTIONS (bondContract) -------------------
+  // Read bonds by issuer => returns array of { bondAddress, name, ... }
   const { data: bondsData, isPending: isBondsLoading } = useReadContract({
-    contract: coinContract,
+    contract: bondContract,
     method: "function getBondsByIssuer(address issuer) view returns (Bond[] memory)",
     params: [account?.address ?? ""],
   });
 
-  // Format bondsData to an array of Bond objects (adjust if necessary)
+  // Convert the data to an array of Bond objects
   const bonds: Bond[] = (bondsData as Bond[]) || [];
 
   return (
@@ -318,7 +379,7 @@ export default function Account() {
         {/* Transaction Result Modal for Mint Coins */}
         {showResult && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg max-w-lg w-full mx-4 p-6 border border-gray-200">
+            <div className="bg-white rounded-lg max-w-lg w-full mx-4 p-6 border border-gray-200 shadow-xl">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-blue-700">
                   Transaction Result
