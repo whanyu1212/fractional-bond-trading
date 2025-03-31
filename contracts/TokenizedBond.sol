@@ -93,11 +93,16 @@ contract TokenizedBond is ERC20, Ownable {
     event RemovedFromWhitelist(address indexed account);
     event KycStatusChanged(address indexed account, bool approved);
 
-    event BondSwapped(
+    event BondTraded(
         address indexed from,
         address indexed to,
         uint256 tokenAmount,
         uint256 stablecoinAmount
+    );
+    event BondGifted(
+        address indexed from,
+        address indexed to,
+        uint256 tokenAmount
     );
 
     constructor(
@@ -433,19 +438,19 @@ contract TokenizedBond is ERC20, Ownable {
      * @param to Address receiving the bonds
      * @param tokenAmount Amount of bond tokens to swap
      * @param stablecoinAmount Amount of stablecoins to pay
-     * @dev Requires approval from both parties - either can initiate
+     * @dev Setting stablecoinAmount to 0 allows gifting bonds without payment
      */
-    function swapBonds(
+    function exchangeBonds(
         address from,
         address to,
         uint256 tokenAmount,
         uint256 stablecoinAmount
     ) external {
         // Verify that caller is one of the participants
-        // require(
-        //     msg.sender == from || msg.sender == to,
-        //     "Not authorized for swap"
-        // );
+        require(
+            msg.sender == from || msg.sender == to,
+            "Not authorized for swap"
+        );
 
         // Check if both parties are whitelisted and KYC approved
         // require(
@@ -465,23 +470,34 @@ contract TokenizedBond is ERC20, Ownable {
 
         // Verify balances
         require(balanceOf(from) >= tokenAmount, "Insufficient bond tokens");
-        require(
-            stablecoin.balanceOf(to) >= stablecoinAmount,
-            "Insufficient stablecoins"
-        );
+        // Only check stablecoin balance if payment is required (not a gift)
+        if (stablecoinAmount > 0) {
+            require(
+                stablecoin.balanceOf(to) >= stablecoinAmount,
+                "Insufficient stablecoins"
+            );
+        }
 
         // Perform the swap - transfer bonds from 'from' to 'to'
         _transfer(from, to, tokenAmount);
 
-        // Transfer stablecoins from 'to' to 'from' as payment
-        stablecoin.safeTransferFrom(to, from, stablecoinAmount);
+        // Transfer stablecoins if applicable (not a gift)
+        if (stablecoinAmount > 0) {
+            stablecoin.safeTransferFrom(to, from, stablecoinAmount);
+        }
 
         // Update last claimed coupon if needed
         if (lastClaimedCoupon[to] == 0) {
             lastClaimedCoupon[to] = block.timestamp;
         }
 
-        // Emit an event for the swap
-        emit BondSwapped(from, to, tokenAmount, stablecoinAmount);
+        // Emit a bond traded event if stablecoinAmount is greater than 0
+        // Otherwise, emit a bond gifted event
+        // This allows for both trading and gifting of bonds
+        if (stablecoinAmount > 0) {
+            emit BondTraded(from, to, tokenAmount, stablecoinAmount);
+        } else {
+            emit BondGifted(from, to, tokenAmount);
+        }
     }
 }
