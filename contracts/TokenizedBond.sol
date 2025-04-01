@@ -336,31 +336,60 @@ contract TokenizedBond is ERC20, Ownable {
     // Purchases are typically individual decisions so we will not implement batch purchases
 
     /**
-     * @notice Purchase of bonds in terms of tokens
-     * @param buyer The address of the buyer
-     * @param tokenAmount The amount of tokens to purchase
+     * @notice Purchase bond tokens for a specified buyer.
+     * @dev This function is expected to be called by an intermediary like the marketplace,
+     *      or potentially directly if permitted. It pulls stablecoin payment directly
+     *      from the 'buyer' account, requiring the 'buyer' to have approved *this*
+     *      TokenizedBond contract address beforehand.
+     * @param buyer The address that will receive the bond tokens and pay for them.
+     * @param tokenAmount The amount of individual bond tokens to purchase.
      */
     function purchaseBondFor(address buyer, uint256 tokenAmount) external {
-        // require(whitelist[buyer], "Buyer not whitelisted");
-        // require(kycApproved[buyer], "Buyer not KYC approved");
+        // --- Input and State Validation ---
+        require(tokenAmount > 0, "Bond: Cannot purchase zero tokens");
         require(
             block.timestamp < bondInfo.maturityDate,
-            "Bond no longer for sale"
+            "Bond: Sale period ended (matured)"
         );
+        // Optional: Uncomment if using whitelisting/KYC features
+        // require(whitelist[buyer], "Buyer not whitelisted");
+        // require(kycApproved[buyer], "Buyer not KYC approved");
 
-        // Calculate price based on token amount rather than bond amount
-        uint256 totalPrice = (tokenAmount * fractionInfo.tokenPrice) /
-            fractionInfo.tokensPerBond;
+        // --- Calculate Total Cost ---
+        // The total price is simply the number of tokens multiplied by the price per token.
+        // Assumes 'fractionInfo.tokenPrice' is already set in the base units of the stablecoin.
+        uint256 totalPrice = tokenAmount * fractionInfo.tokenPrice;
 
+        // Sanity check for potential overflow or zero price resulting in zero cost
+        require(
+            totalPrice > 0 ||
+                (tokenAmount == 0 && fractionInfo.tokenPrice == 0),
+            "Bond: Invalid calculated price"
+        ); // Allow 0 price only if amount is 0 (already checked above)
+
+        // --- Check Against Maximum Supply (Value-Based) ---
+        // Ensure the total value raised does not exceed the maximum defined for this bond.
+        // Assumes 'bondInfo.maxBondSupply' represents the maximum total *value* in stablecoin units.
         require(
             fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
-            "Exceeds maximum tokens"
+            "Bond: Purchase exceeds maximum bond value"
         );
 
-        // Pull stablecoin from the buyer's account
+        // --- Process Stablecoin Payment ---
+        // Pull the 'totalPrice' amount of stablecoins directly from the 'buyer'.
+        // This requires the 'buyer' to have previously called 'approve' on the stablecoin
+        // contract, granting allowance to *this* TokenizedBond contract address.
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
-        _mint(buyer, tokenAmount);
+
+        // --- Mint Bond Tokens ---
+        // Mint the purchased amount of bond tokens to the buyer.
+        _mint(buyer, tokenAmount); // Assumes inheriting standard OpenZeppelin ERC20
+
+        // --- Update State ---
+        // Increment the total value raised by the amount paid.
         fractionInfo.totalRaised += totalPrice;
+
+        // --- Emit Event ---
         emit BondPurchased(buyer, tokenAmount);
     }
 
