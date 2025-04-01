@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 // Import the TokenizedBond contract
 import "./TokenizedBond.sol";
+// Import Chainlink and OpenZeppelin libraries
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
@@ -10,7 +11,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title BondFactory
- * @notice A contract that handles the creation of instances of tokenized bond by calling methods in TokenizedBond.sol
+ * @notice A contract that handles bond creation/issuance, bond registry management, bond configuration and lifecycle management and some administrative operations
  */
 contract BondFactory is ChainlinkClient, ConfirmedOwner {
     using Strings for uint256;
@@ -138,7 +139,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             calling the constructor in TokenizedBond.sol
          */
 
-        uint256 initialSupply = _tokensPerBond * _maxBondSupply;
+        // uint256 initialSupply = _tokensPerBond * _maxBondSupply;
         TokenizedBond newBond = new TokenizedBond(
             _name,
             _symbol,
@@ -151,8 +152,8 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             _stablecoinAddress,
             _tokensPerBond,
             _tokenPrice,
-            _maxBondSupply,
-            initialSupply
+            _maxBondSupply
+            // initialSupply
         );
 
         address bondAddress = address(newBond);
@@ -221,10 +222,10 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         uint256 _tokenPrice
     ) public {
         // Ensure the bond exists and is active
-        // require(
-        //     bondRegistry[bondAddress].active,
-        //     "Bond is not active or doesn't exist"
-        // );
+        require(
+            bondRegistry[bondAddress].active,
+            "Bond is not active or doesn't exist"
+        );
 
         TokenizedBond bond = TokenizedBond(bondAddress);
 
@@ -691,42 +692,42 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
 
     // ------------------------------- Bond Operations ----------------------------------------//
 
-    /**
-     * @notice Purchase bonds for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     * @param bondAmount Number of bonds to purchase
-     */
-    function purchaseBonds(
-        address bondAddress,
-        address investor,
-        uint256 bondAmount
-    ) external {
-        // require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.purchaseBondFor(investor, bondAmount);
-    }
+    // /**
+    //  * @notice Purchase bonds for an investor through the factory
+    //  * @param bondAddress Address of the TokenizedBond
+    //  * @param investor Address of the investor
+    //  * @param bondAmount Number of bonds to purchase
+    //  */
+    // function purchaseBonds(
+    //     address bondAddress,
+    //     address investor,
+    //     uint256 bondAmount
+    // ) external {
+    //     // require(bondRegistry[bondAddress].active, "Bond not active");
+    //     TokenizedBond bond = TokenizedBond(bondAddress);
+    //     bond.purchaseBondFor(investor, bondAmount);
+    // }
 
-    /**
-     * @notice Claim coupon payment for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     */
-    function claimCoupon(address bondAddress, address investor) external {
-        // require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.claimCouponFor(investor);
-    }
+    // /**
+    //  * @notice Claim coupon payment for an investor through the factory
+    //  * @param bondAddress Address of the TokenizedBond
+    //  * @param investor Address of the investor
+    //  */
+    // function claimCoupon(address bondAddress, address investor) external {
+    //     // require(bondRegistry[bondAddress].active, "Bond not active");
+    //     TokenizedBond bond = TokenizedBond(bondAddress);
+    //     bond.claimCouponFor(investor);
+    // }
 
-    /**
-     * @notice Redeem bonds for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     */
-    function redeemBonds(address bondAddress, address investor) external {
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.redeemFor(investor);
-    }
+    // /**
+    //  * @notice Redeem bonds for an investor through the factory
+    //  * @param bondAddress Address of the TokenizedBond
+    //  * @param investor Address of the investor
+    //  */
+    // function redeemBonds(address bondAddress, address investor) external {
+    //     TokenizedBond bond = TokenizedBond(bondAddress);
+    //     bond.redeemFor(investor);
+    // }
 
     // /**
     //  * @notice Add addresses to whitelist for a bond
