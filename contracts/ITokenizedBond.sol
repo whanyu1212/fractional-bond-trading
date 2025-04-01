@@ -69,4 +69,21 @@ interface ITokenizedBond is IERC20 {
      * @notice Redeem the bond after maturity to the address that is calling the function
      */
     function redeemFor(address holder) external;
+
+    function exchangeBonds(
+        address from,
+        address to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    ) external;
+
+    function batchClaimCoupons(
+        address[] calldata claimers
+    ) external returns (bool[] memory successfulClaims, uint256 totalClaimed);
+
+    function batchRedeemBonds(
+        address[] calldata redeemers
+    )
+        external
+        returns (bool[] memory successfulRedemptions, uint256 totalRedeemed);
 }

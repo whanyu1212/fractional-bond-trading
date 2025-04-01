@@ -117,8 +117,7 @@ contract TokenizedBond is ERC20, Ownable {
         address _stablecoinAddress,
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
-        uint256 _maxBondSupply,
-        uint256 _initialSupply
+        uint256 _maxBondSupply
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
             name: _name,
@@ -143,8 +142,6 @@ contract TokenizedBond is ERC20, Ownable {
         });
 
         stablecoin = IERC20(_stablecoinAddress);
-
-        _mint(_issuer, _initialSupply);
     }
 
     /**
@@ -192,10 +189,10 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 _maxBondSupply,
         uint256 _tokenPrice
     ) external onlyOwner {
-        require(
-            bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
-            "Cannot modify after bonds are minted"
-        );
+        // require(
+        //     bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
+        //     "Cannot modify after bonds are minted"
+        // );
 
         if (_couponRate > 0) {
             bondInfo.couponRate = _couponRate;
@@ -335,31 +332,8 @@ contract TokenizedBond is ERC20, Ownable {
         }
     }
 
-    /**
-     * @notice Check if a transfer is allowed
-     * @param from Sender address
-     * @param to Recipient address
-     * @return Whether the transfer is allowed
-     */
-    function canTransfer(address from, address to) public view returns (bool) {
-        // Allow transfers to the contract itself for redemption after maturity
-        if (block.timestamp >= bondInfo.maturityDate) {
-            // After maturity, only allow transfers to the contract itself (for redemption)
-            return
-                to == address(this) &&
-                whitelist[from] &&
-                whitelist[to] &&
-                kycApproved[from] &&
-                kycApproved[to];
-        }
-
-        // Before maturity, check regular transfer conditions
-        return
-            whitelist[from] &&
-            whitelist[to] &&
-            kycApproved[from] &&
-            kycApproved[to];
-    }
+    //-------------------- Purchase functions --------------------//
+    // Purchases are typically individual decisions so we will not implement batch purchases
 
     /**
      * @notice Purchase of bonds in terms of tokens
@@ -390,6 +364,8 @@ contract TokenizedBond is ERC20, Ownable {
         emit BondPurchased(buyer, tokenAmount);
     }
 
+    //-------------------- Claim functions --------------------//
+
     /**
      * @notice Claim coupon payments on behalf of a given address.
      * @param claimer The address for which to claim coupon payments.
@@ -415,6 +391,64 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
+     * @notice Claim coupon payments on behalf of multiple addresses in a single transaction
+     * @param claimers Array of addresses for which to claim coupon payments
+     * @return successfulClaims Array of booleans indicating which claims were successful
+     * @return totalClaimed Total amount of coupons claimed across all successful claims
+     */
+    function batchClaimCoupons(
+        address[] calldata claimers
+    ) external returns (bool[] memory successfulClaims, uint256 totalClaimed) {
+        require(claimers.length > 0, "Empty claimers array");
+
+        successfulClaims = new bool[](claimers.length);
+        totalClaimed = 0;
+
+        for (uint256 i = 0; i < claimers.length; i++) {
+            address claimer = claimers[i];
+
+            // Check basic requirements
+            if (balanceOf(claimer) == 0) {
+                successfulClaims[i] = false;
+                continue;
+            }
+
+            // Check if enough time has passed since last claim
+            if (
+                block.timestamp <
+                lastClaimedCoupon[claimer] +
+                    (365 days / bondInfo.couponFrequency)
+            ) {
+                successfulClaims[i] = false;
+                continue;
+            }
+
+            // Calculate coupon amount
+            uint256 couponAmount = (balanceOf(claimer) *
+                bondInfo.faceValue *
+                bondInfo.couponRate) /
+                (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
+
+            // Update state
+            lastClaimedCoupon[claimer] = block.timestamp;
+
+            // Transfer coupon
+            stablecoin.safeTransfer(claimer, couponAmount);
+
+            // Record success and update total
+            successfulClaims[i] = true;
+            totalClaimed += couponAmount;
+
+            // Emit event for each successful claim
+            emit CouponPaid(claimer, couponAmount);
+        }
+
+        return (successfulClaims, totalClaimed);
+    }
+
+    //-------------------- Redemption functions --------------------//
+
+    /**
      * @notice Redeem the bond after maturity to a specified address so this function can be called by anyone
      * @param redeemer The address to which the redemption amount will be transferred
      */
@@ -433,6 +467,55 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
+     * @notice Redeem bonds after maturity for multiple addresses in a single transaction
+     * @param redeemers Array of addresses for which to redeem bonds
+     * @return successfulRedemptions Array of booleans indicating which redemptions were successful
+     * @return totalRedeemed Total amount of stablecoins redeemed across all successful redemptions
+     */
+    function batchRedeemBonds(
+        address[] calldata redeemers
+    )
+        external
+        returns (bool[] memory successfulRedemptions, uint256 totalRedeemed)
+    {
+        require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
+        require(redeemers.length > 0, "Empty redeemers array");
+
+        successfulRedemptions = new bool[](redeemers.length);
+        totalRedeemed = 0;
+
+        for (uint256 i = 0; i < redeemers.length; i++) {
+            address redeemer = redeemers[i];
+
+            // Check if the redeemer has any bonds
+            uint256 bondTokens = balanceOf(redeemer);
+            if (bondTokens == 0) {
+                successfulRedemptions[i] = false;
+                continue;
+            }
+
+            // Calculate redemption amount
+            uint256 redemptionAmount = (bondTokens * bondInfo.faceValue) /
+                fractionInfo.tokensPerBond;
+
+            // Burn tokens and transfer stablecoins
+            _burn(redeemer, bondTokens);
+            stablecoin.safeTransfer(redeemer, redemptionAmount);
+
+            // Record success and update total
+            successfulRedemptions[i] = true;
+            totalRedeemed += redemptionAmount;
+
+            // Emit event for each successful redemption
+            emit BondRedeemed(redeemer, redemptionAmount);
+        }
+
+        return (successfulRedemptions, totalRedeemed);
+    }
+
+    //-------------------- Exchange functions --------------------//
+
+    /**
      * @notice Swap bonds between two approved holders (both parties must agree)
      * @param from Address sending the bonds
      * @param to Address receiving the bonds
@@ -447,10 +530,10 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 stablecoinAmount
     ) external {
         // Verify that caller is one of the participants
-        require(
-            msg.sender == from || msg.sender == to,
-            "Not authorized for swap"
-        );
+        // require(
+        //     msg.sender == from || msg.sender == to,
+        //     "Not authorized for swap"
+        // );
 
         // Check if both parties are whitelisted and KYC approved
         // require(
