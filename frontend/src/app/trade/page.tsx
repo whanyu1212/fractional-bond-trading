@@ -32,7 +32,7 @@ export default function Trade() {
     useReadContract({
       contract: bondContract,
       method:
-        "function getActiveBondDetails(uint256 index) view returns (address bondAddress, string name, string symbol, address issuer, uint256 maturityDate, uint256 faceValue)",
+        "function getActiveBondDetailsByIndex(uint256 index) view returns (address bondAddress, string name, string symbol, address issuer, uint256 maturityDate, uint256 faceValue)",
       params: [BigInt(i)],
     })
   );
