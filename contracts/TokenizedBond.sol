@@ -35,7 +35,7 @@ contract TokenizedBond is ERC20, Ownable {
         string symbol; // Symbol of the bond
         uint256 bondId; // Unique identifier or name for the bond
         address issuer; // Bond issuer's address
-        uint256 maxBondSupply; // Maximum number of bonds that can be issued
+        uint256 maxBondSupply; // Maximum number of whole bonds that can be minted and issued conceptually
         uint256 maturityDate; // UNIX timestamp for maturity, after which bond can be redeemed
         uint256 faceValue; // Total principal amount of the bond
         uint256 couponRate; // Annual coupon rate (e.g., in basis points)
@@ -52,6 +52,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 tokensPerBond; // Total ERC20 tokens representing one bond
         uint256 tokenPrice; // Price of one token in stablecoin
         uint256 totalRaised; // Total amount raised from bond sales
+        uint256 maxOfferingSize; // Maximum amount of stablecoin to raise
     }
 
     BondInfo public bondInfo;
@@ -86,12 +87,14 @@ contract TokenizedBond is ERC20, Ownable {
     event CouponPaid(address indexed claimer, uint256 couponAmount);
     event BondRedeemed(address indexed redeemer, uint256 redemptionAmount);
 
+    //-------------------- Unused events --------------------//
     event DocumentURIUpdated(string documentURI);
     event DocumentHashUpdated(bytes32 documentHash);
 
     event AddedToWhitelist(address indexed account);
     event RemovedFromWhitelist(address indexed account);
     event KycStatusChanged(address indexed account, bool approved);
+    //-------------------------------------------------------
 
     event BondTraded(
         address indexed from,
@@ -117,7 +120,8 @@ contract TokenizedBond is ERC20, Ownable {
         address _stablecoinAddress,
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
-        uint256 _maxBondSupply
+        uint256 _maxBondSupply,
+        uint256 _maxOfferingSize
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
             name: _name,
@@ -138,11 +142,14 @@ contract TokenizedBond is ERC20, Ownable {
         fractionInfo = FractionalizationInfo({
             tokensPerBond: _tokensPerBond,
             tokenPrice: _tokenPrice,
-            totalRaised: 0
+            totalRaised: 0,
+            maxOfferingSize: _maxOfferingSize // Max stablecoin value to raise
         });
 
         stablecoin = IERC20(_stablecoinAddress);
     }
+
+    //-------------------- View/Getter functions --------------------//
 
     /**
      * @notice Get the bond price in stablecoin
@@ -176,24 +183,23 @@ contract TokenizedBond is ERC20, Ownable {
         return address(stablecoin);
     }
 
+    //-------------------- Owner functions --------------------//
+
     /**
      * @notice Modify a subset of bond parameters (only callable by owner/issuer), must be bigger than 0
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date
      * @param _maxBondSupply New maximum bond supply
      * @param _tokenPrice New bond price
+     * @param _maxOfferingSize New maximum offering size
      */
     function modifyBond(
         uint256 _couponRate,
         uint256 _maturityDate,
         uint256 _maxBondSupply,
-        uint256 _tokenPrice
+        uint256 _tokenPrice,
+        uint256 _maxOfferingSize
     ) external onlyOwner {
-        // require(
-        //     bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
-        //     "Cannot modify after bonds are minted"
-        // );
-
         if (_couponRate > 0) {
             bondInfo.couponRate = _couponRate;
         }
@@ -214,6 +220,10 @@ contract TokenizedBond is ERC20, Ownable {
             fractionInfo.tokenPrice = _tokenPrice;
         }
 
+        if (_maxOfferingSize > 0) {
+            fractionInfo.maxOfferingSize = _maxOfferingSize;
+        }
+
         emit BondModified(
             bondInfo.couponRate,
             bondInfo.maturityDate,
@@ -223,171 +233,124 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
-     * @notice Mint new bonds to the specified address (in this case, we need to supply to the market)
-     * @param to The address to which the new bonds will be minted
-     * @param bondAmount The number of bonds to mint
+     * @notice Mint new bond tokens corresponding to a number of whole bonds. Only owner.
+     * @dev Typically used by the issuer to create the initial supply or add more supply if needed,up to the maxBondSupply.
+     * @param to The address to which the new bond tokens will be minted.
+     * @param bondAmount The number of *whole bonds* worth of tokens to mint.
      */
     function mintBond(address to, uint256 bondAmount) external onlyOwner {
-        require(to != address(0), "Invalid recipient address");
-        require(bondAmount > 0, "Amount must be greater than 0");
+        require(to != address(0), "Mint to the zero address");
+        require(bondAmount > 0, "Mint amount must be > 0");
         require(
             bondInfo.totalBondsMinted + bondAmount <= bondInfo.maxBondSupply,
-            "Exceeds maximum bond supply"
+            "Exceeds maximum bond supply (number)" // Check against the count of whole bonds
         );
         require(block.timestamp < bondInfo.maturityDate, "Bond has matured");
 
-        // Calculate total future coupon payments
-        uint256 remainingCoupons = ((bondInfo.maturityDate - block.timestamp) *
-            bondInfo.couponFrequency) / 365 days;
-        uint256 totalCouponPayments = (bondAmount *
-            bondInfo.faceValue *
-            bondInfo.couponRate *
-            remainingCoupons) / (10000 * bondInfo.couponFrequency);
-
-        // Ensure contract has enough stablecoin for coupon payments and principal
-        require(
-            stablecoin.balanceOf(address(this)) >=
-                totalCouponPayments + (bondAmount * bondInfo.faceValue),
-            "Insufficient stablecoin reserve for future payments"
-        );
-
+        // Calculate the number of fractional tokens to mint
         uint256 tokenAmount = bondAmount * fractionInfo.tokensPerBond;
-        _mint(to, tokenAmount);
+        // Ensure no overflow in token amount calculation
+        if (bondAmount > 0) {
+            require(
+                tokenAmount / bondAmount == fractionInfo.tokensPerBond,
+                "Mint: Token amount calculation overflow"
+            );
+        }
+
+        // Update the count of total whole bonds conceptually minted
         bondInfo.totalBondsMinted += bondAmount;
 
-        // Initialize the last claimed coupon timestamp for the new holder
+        // Mint the corresponding fractional tokens to the recipient
+        _mint(to, tokenAmount);
+
+        // Initialize the last claimed coupon timestamp for the new holder if they are receiving tokens for the first time.
+        // This prevents them from claiming coupons for periods before they held the tokens.
         if (lastClaimedCoupon[to] == 0) {
+            // Set to current time; they become eligible to claim in the *next* full period.
             lastClaimedCoupon[to] = block.timestamp;
         }
 
+        // Emit an event logging the minting action
         emit BondMinted(to, bondAmount, tokenAmount);
-    }
-
-    /**
-     * @notice Set the document URI for legal documentation
-     * @param _documentURI The URI pointing to the legal documents
-     */
-    function setDocumentURI(string calldata _documentURI) external onlyOwner {
-        documentInfo.documentURI = _documentURI;
-        emit DocumentURIUpdated(_documentURI);
-    }
-
-    /**
-     * @notice Set the document hash for legal documentation
-     * @param _documentHash The hash of the legal documents
-     */
-    function setDocumentHash(bytes32 _documentHash) external onlyOwner {
-        documentInfo.documentHash = _documentHash;
-        emit DocumentHashUpdated(_documentHash);
-    }
-
-    /**
-     * @notice Verify the hash of a document
-     * @param documentContent The content of the document
-     * @return Whether the hash of the document matches the stored hash
-     */
-    function verifyDocument(
-        string calldata documentContent
-    ) external view returns (bool) {
-        bytes32 calculatedHash = keccak256(abi.encodePacked(documentContent));
-        return calculatedHash == documentInfo.documentHash;
-    }
-
-    /**
-     * @notice Add addresses to the transfer whitelist
-     * @param accounts Array of addresses to whitelist
-     */
-    function addToWhitelist(address[] calldata accounts) external onlyOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            whitelist[accounts[i]] = true;
-            emit AddedToWhitelist(accounts[i]);
-        }
-    }
-
-    /**
-     * @notice Remove addresses from the transfer whitelist
-     * @param accounts Array of addresses to remove from the whitelist
-     */
-    function removeFromWhitelist(
-        address[] calldata accounts
-    ) external onlyOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            whitelist[accounts[i]] = false;
-            emit RemovedFromWhitelist(accounts[i]);
-        }
-    }
-
-    /**
-     * @notice Set KYC status for accounts
-     * @param accounts Array of addresses to update
-     * @param approved KYC approval status
-     */
-    function setKycStatus(
-        address[] calldata accounts,
-        bool approved
-    ) external onlyOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            kycApproved[accounts[i]] = approved;
-            emit KycStatusChanged(accounts[i], approved);
-        }
     }
 
     //-------------------- Purchase functions --------------------//
     // Purchases are typically individual decisions so we will not implement batch purchases
 
     /**
-     * @notice Purchase bond tokens for a specified buyer.
-     * @dev This function is expected to be called by an intermediary like the marketplace,
-     *      or potentially directly if permitted. It pulls stablecoin payment directly
-     *      from the 'buyer' account, requiring the 'buyer' to have approved *this*
-     *      TokenizedBond contract address beforehand.
+     * @notice Purchase bond tokens for a specified buyer by transferring stablecoin.
+     * @dev Mints *new* tokens to the buyer. Requires prior stablecoin approval from the buyer to this contract.
+     *      Checks against the maximum offering size (total stablecoin value to raise).
      * @param buyer The address that will receive the bond tokens and pay for them.
      * @param tokenAmount The amount of individual bond tokens to purchase.
      */
     function purchaseBondFor(address buyer, uint256 tokenAmount) external {
-        // --- Input and State Validation ---
+        require(
+            buyer != address(0),
+            "Bond: Purchase cannot be for zero address"
+        );
         require(tokenAmount > 0, "Bond: Cannot purchase zero tokens");
+        require(
+            fractionInfo.tokenPrice > 0,
+            "Bond: Token price must be set to purchase"
+        );
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond: Sale period ended (matured)"
         );
-        // Optional: Uncomment if using whitelisting/KYC features
-        // require(whitelist[buyer], "Buyer not whitelisted");
-        // require(kycApproved[buyer], "Buyer not KYC approved");
-
         // --- Calculate Total Cost ---
-        // The total price is simply the number of tokens multiplied by the price per token.
-        // Assumes 'fractionInfo.tokenPrice' is already set in the base units of the stablecoin.
         uint256 totalPrice = tokenAmount * fractionInfo.tokenPrice;
+        if (tokenAmount > 0) {
+            require(
+                totalPrice / tokenAmount == fractionInfo.tokenPrice,
+                "Bond: Price calculation overflow"
+            );
+        }
+        require(totalPrice > 0, "Bond: Total price must be positive"); // Since tokenAmount > 0 and tokenPrice > 0
 
-        // Sanity check for potential overflow or zero price resulting in zero cost
+        // Ensure the total value raised does not exceed the maximum defined for this offering.
         require(
-            totalPrice > 0 ||
-                (tokenAmount == 0 && fractionInfo.tokenPrice == 0),
-            "Bond: Invalid calculated price"
-        ); // Allow 0 price only if amount is 0 (already checked above)
+            fractionInfo.totalRaised + totalPrice <=
+                fractionInfo.maxOfferingSize,
+            "Bond: Purchase exceeds maximum offering size"
+        );
 
-        // --- Check Against Maximum Supply (Value-Based) ---
-        // Ensure the total value raised does not exceed the maximum defined for this bond.
-        // Assumes 'bondInfo.maxBondSupply' represents the maximum total *value* in stablecoin units.
+        // Calculate max total tokens possible based on max *number* of bonds
+        uint256 maxTotalTokens = bondInfo.maxBondSupply *
+            fractionInfo.tokensPerBond;
+        // Prevent overflow in maxTotalTokens calculation
+        if (bondInfo.maxBondSupply > 0) {
+            // Ensure no division by zero if maxBondSupply is 0 (though constructor prevents this)
+            require(
+                maxTotalTokens / bondInfo.maxBondSupply ==
+                    fractionInfo.tokensPerBond,
+                "Bond: Max token calculation overflow"
+            );
+        }
+        // Ensure minting this amount doesn't exceed the theoretical max token count
         require(
-            fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
-            "Bond: Purchase exceeds maximum bond value"
+            totalSupply() + tokenAmount <= maxTotalTokens,
+            "Bond: Purchase exceeds max possible token supply"
         );
 
         // --- Process Stablecoin Payment ---
         // Pull the 'totalPrice' amount of stablecoins directly from the 'buyer'.
-        // This requires the 'buyer' to have previously called 'approve' on the stablecoin
-        // contract, granting allowance to *this* TokenizedBond contract address.
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
 
         // --- Mint Bond Tokens ---
         // Mint the purchased amount of bond tokens to the buyer.
-        _mint(buyer, tokenAmount); // Assumes inheriting standard OpenZeppelin ERC20
+        // Note: This increases totalSupply().
+        _mint(buyer, tokenAmount);
 
         // --- Update State ---
         // Increment the total value raised by the amount paid.
         fractionInfo.totalRaised += totalPrice;
+
+        // Initialize the last claimed coupon timestamp for the new holder if they are new
+        if (lastClaimedCoupon[buyer] == 0) {
+            // Set to current time, they can claim next period if eligible
+            lastClaimedCoupon[buyer] = block.timestamp;
+        }
 
         // --- Emit Event ---
         emit BondPurchased(buyer, tokenAmount);
@@ -610,6 +573,77 @@ contract TokenizedBond is ERC20, Ownable {
             emit BondTraded(from, to, tokenAmount, stablecoinAmount);
         } else {
             emit BondGifted(from, to, tokenAmount);
+        }
+    }
+
+    //-------------------- Unused functions --------------------//
+
+    /**
+     * @notice Set the document URI for legal documentation
+     * @param _documentURI The URI pointing to the legal documents
+     */
+    function setDocumentURI(string calldata _documentURI) external onlyOwner {
+        documentInfo.documentURI = _documentURI;
+        emit DocumentURIUpdated(_documentURI);
+    }
+
+    /**
+     * @notice Set the document hash for legal documentation
+     * @param _documentHash The hash of the legal documents
+     */
+    function setDocumentHash(bytes32 _documentHash) external onlyOwner {
+        documentInfo.documentHash = _documentHash;
+        emit DocumentHashUpdated(_documentHash);
+    }
+
+    /**
+     * @notice Verify the hash of a document
+     * @param documentContent The content of the document
+     * @return Whether the hash of the document matches the stored hash
+     */
+    function verifyDocument(
+        string calldata documentContent
+    ) external view returns (bool) {
+        bytes32 calculatedHash = keccak256(abi.encodePacked(documentContent));
+        return calculatedHash == documentInfo.documentHash;
+    }
+
+    /**
+     * @notice Add addresses to the transfer whitelist
+     * @param accounts Array of addresses to whitelist
+     */
+    function addToWhitelist(address[] calldata accounts) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            whitelist[accounts[i]] = true;
+            emit AddedToWhitelist(accounts[i]);
+        }
+    }
+
+    /**
+     * @notice Remove addresses from the transfer whitelist
+     * @param accounts Array of addresses to remove from the whitelist
+     */
+    function removeFromWhitelist(
+        address[] calldata accounts
+    ) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            whitelist[accounts[i]] = false;
+            emit RemovedFromWhitelist(accounts[i]);
+        }
+    }
+
+    /**
+     * @notice Set KYC status for accounts
+     * @param accounts Array of addresses to update
+     * @param approved KYC approval status
+     */
+    function setKycStatus(
+        address[] calldata accounts,
+        bool approved
+    ) external onlyOwner {
+        for (uint256 i = 0; i < accounts.length; i++) {
+            kycApproved[accounts[i]] = approved;
+            emit KycStatusChanged(accounts[i], approved);
         }
     }
 }
