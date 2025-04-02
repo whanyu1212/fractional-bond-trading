@@ -65,7 +65,9 @@ export function Navbar() {
         <Link href="/account" className="text-lg font-medium text-gray-700 hover:text-blue-500">
           My Account
         </Link>
-
+        {/* <Link href="/mockcoin" className="text-lg font-medium text-gray-700 hover:text-blue-500">
+          Mock Coin
+        </Link> */}
       </div>
 
 
