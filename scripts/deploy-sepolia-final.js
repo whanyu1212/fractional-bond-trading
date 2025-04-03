@@ -632,7 +632,102 @@ async function main() {
         console.log("\n--- Bond Purchases Complete ---");
     }
 
-    
+    console.log("\n=== Displaying Player Bond Holdings ===");
+
+    // Loop through each player (player1 to player5)
+    for (let i = 0; i < playerSigners.length; i++) {
+        const player = playerSigners[i];
+        const playerIndex = i + 1; // For display (Player 1, Player 2, etc.)
+        console.log(`\n======= Querying Holdings for Player ${playerIndex} (${player.address}) =======`);
+
+        // --- 1. Query Marketplace Internal State (via getUserMetrics) ---
+        console.log(`\n  --- 1. Marketplace Internal Metrics & Positions (getUserMetrics) ---`);
+        try {
+            // Call the external getUserMetrics function on the deployed marketplace contract
+            const metrics = await bondMarketplace.getUserMetrics(player.address);
+
+            // Destructure the returned values: count, volume, and the array of IDs from internal analytics
+            const [bondsHeldCount, totalVolume, activePositionIds] = metrics;
+
+            // Log the general metrics tracked by the marketplace
+            console.log(`    Marketplace Metrics:`);
+            console.log(`      Bonds Held Count (Types): ${bondsHeldCount.toString()}`); // Based on userBondCount incremented during purchase
+            console.log(`      Total Trading Volume (${stablecoinSymbol}): ${ethers.formatUnits(totalVolume, stablecoinDecimals)}`); // Based on userTradingVolume
+
+            // Log the active positions according to the marketplace's internal holderBalances mapping
+            if (activePositionIds.length === 0) {
+                console.log(`    Marketplace analytics show Player ${playerIndex} holds no active bond positions.`);
+            } else {
+                console.log(`    Marketplace analytics show active positions in Bond IDs:`);
+                // Convert BigInt array to string array for easy joining and logging
+                console.log(`      [${activePositionIds.map(id => id.toString()).join(', ')}]`);
+            }
+        } catch (error) {
+            // Catch potential errors during the getUserMetrics call
+            console.error(`    ❌ Error calling getUserMetrics for Player ${playerIndex}:`, error.reason || error);
+            // Log the full error if no specific reason is provided by the revert
+            if (!error.reason) console.error(error);
+        }
+
+        // --- 2. Query Actual Balances (getActualUserHoldingsWithDetails) ---
+        console.log(`\n  --- 2. Actual Holdings via Contract Queries (getActualUserHoldingsWithDetails) ---`);
+        // Note: The accuracy and completeness of this function depend on its internal iteration logic
+        // (e.g., the loopLimit used) and whether all relevant bond contracts are checked.
+        try {
+            // Call the external function that queries the underlying bond contracts
+            const holdings = await bondMarketplace.getActualUserHoldingsWithDetails(player.address);
+
+            // Destructure the returned arrays: IDs, Addresses, Balances
+            const [bondIds, bondAddresses, balances] = holdings;
+
+            // Check if any actual holdings were found
+            if (bondIds.length === 0) {
+                console.log(`    Player ${playerIndex} actually holds no bond tokens according to contract queries.`);
+            } else {
+                // Log the details for each bond the player actually holds
+                console.log(`    Actual Holdings (${bondIds.length} position(s)):`);
+                for (let k = 0; k < bondIds.length; k++) {
+                    const bondId = bondIds[k];
+                    const bondAddress = bondAddresses[k];
+                    const balance = balances[k]; // This is the raw BigInt balance (fractional tokens)
+                    let bondSymbol = '???'; // Default symbol if lookup fails
+
+                    // Attempt to find the bond symbol using the instances stored earlier in the script
+                    const bondInstance = createdBondInstances[bondId.toString()];
+                    if (bondInstance) {
+                        try {
+                            // Call the .symbol() function on the stored contract instance
+                            bondSymbol = await bondInstance.symbol();
+                        } catch (symbolError) {
+                            // Log a warning if fetching the symbol fails
+                            console.warn(`      Warning: Could not fetch symbol for Bond ID ${bondId}`);
+                        }
+                    } else {
+                        // Log a warning if the instance wasn't found in the script's map
+                        console.warn(`      Warning: No script instance found for Bond ID ${bondId} to fetch symbol.`);
+                    }
+
+                    // Print the details for this specific bond holding
+                    console.log(`      --------------------`);
+                    console.log(`      Bond ID: ${bondId.toString()}`); // Use toString() for consistent display
+                    console.log(`        Symbol: ${bondSymbol}`);
+                    console.log(`        Contract: ${bondAddress}`);
+                    console.log(`        Balance: ${balance.toString()} fractional tokens`); // Display the raw fractional token amount
+                }
+                console.log(`      --------------------`); // Footer for the list
+            }
+        } catch (error) {
+            // Catch potential errors during the getActualUserHoldingsWithDetails call
+            console.error(`    ❌ Error calling getActualUserHoldingsWithDetails for Player ${playerIndex}:`, error.reason || error);
+            // Log the full error if no specific reason is provided
+            if (!error.reason) console.error(error);
+        }
+        // Separator between players
+        console.log(`=============================================================`);
+
+    } // End of player loop
+
+    console.log("\n--- Player Holdings Display Complete ---");
     console.log("====================================================");
 
 }
