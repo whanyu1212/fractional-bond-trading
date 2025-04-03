@@ -17,13 +17,13 @@ async function main() {
     // === Deploy MockStablecoin === (Same as before)
     console.log("\n=== Deploying MockStablecoin ===");
     const tokenName = "BondChain Coin";
-    const tokenSymbol = "BCC";
+    const stablecoinSymbol = "BCC";
     const stablecoinDecimals = 6;
     const MockStablecoin = await ethers.getContractFactory("MockStablecoin");
-    const mockStablecoin = await MockStablecoin.deploy(tokenName, tokenSymbol);
+    const mockStablecoin = await MockStablecoin.deploy(tokenName, stablecoinSymbol);
     await mockStablecoin.waitForDeployment();
     const mockStablecoinAddress = await mockStablecoin.getAddress();
-    console.log(`MockStablecoin (${tokenSymbol}) deployed to: ${mockStablecoinAddress}`);
+    console.log(`MockStablecoin (${stablecoinSymbol}) deployed to: ${mockStablecoinAddress}`);
     console.log("Decimals:", stablecoinDecimals);
     console.log("====================================================");
 
@@ -69,6 +69,8 @@ async function main() {
     console.log(`\n=== Creating Bonds & Storing Instances ===`);
     const createdBondAddresses = {}; // Store results { bondId: address }
     const createdBondInstances = {}; // Store results { bondId: ethers.Contract instance } 
+    const bondIssuers = {}; // Store results { bondId: issuerSigner }
+    const bondCreationDetails = {}; // Store creation details { bondId: { tokenPrice: BigInt, tokensPerBond: BigInt } }
     let bondIdCounter = 1n;
     const bondsPerPlayer = 4;
     const bondsToFund = []; // Store { bondId, instance, issuerSigner, faceValue, maxBondSupply }
@@ -102,8 +104,9 @@ async function main() {
             const tokenPriceStr = (j % 2 === 0) ? "0.99" : "1.01"; 
             const tokenPrice = ethers.parseUnits(tokenPriceStr, stablecoinDecimals);
             const maxBondSupply = (1n + BigInt(j * 20)); 
-            const maxOfferingSizeRough = BigInt(maxBondSupply) * BigInt(faceValue) / (10n**BigInt(stablecoinDecimals));
-            const maxOfferingSize = maxOfferingSizeRough;
+            const pricePerWholeBond = tokenPrice * tokensPerBond; // e.g., $0.99 * 1000 = $990 (in units)
+            // Calculate max offering size based on this issuance price per whole bond
+            const maxOfferingSize = maxBondSupply * pricePerWholeBond;
             const totalFractionalTokensToExpect = maxBondSupply * tokensPerBond;
 
             try {
@@ -132,7 +135,10 @@ async function main() {
                     );
                     createdBondInstances[currentBondId.toString()] = tokenizedBondInstance;
                     console.log(`  ✅ Stored ethers.js instance for Bond ID ${currentBondId}.`);
-
+                    bondIssuers[currentBondId.toString()] = issuerSigner; // Store the issuer signer
+                    console.log(`  Issuer Signer: ${issuerSigner.address}`);
+                    bondCreationDetails[currentBondId.toString()] = { tokenPrice: tokenPrice, tokensPerBond: tokensPerBond }; // Store creation details
+                    console.log(`  Token Price: ${ethers.formatUnits(tokenPrice, stablecoinDecimals)} ${stablecoinSymbol}`);
                     bondsToFund.push({
                         bondId: currentBondId,
                         instance: tokenizedBondInstance,
@@ -142,41 +148,8 @@ async function main() {
                     });
                     console.log(`  ✅ Stored instance and funding info for Bond ID ${currentBondId}.`);
 
-                    // --- 3. Issuer Mints Initial Bond Tokens using mintBond ---
-                    // We mint the entire maxBondSupply (as whole bonds) to the issuer
-                    console.log(`  Attempting initial mint using mintBond(${issuerSigner.address}, ${maxBondSupply}) by issuer...`);
-                    try {
-                        // Call mintBond with issuer address and the max number of WHOLE bonds
-                        const mintTx = await tokenizedBondInstance.connect(issuerSigner).mintBond(
-                            issuerSigner.address, // to: the issuer themselves
-                            maxBondSupply        // bondAmount: the maximum number of whole bonds allowed
-                        );
-                        await mintTx.wait();
-                        console.log(`  ✅ Initial bond tokens minted via mintBond for Bond ID ${currentBondId}.`);
-                        successfulMints++;
-
-                        // --- 4. Verify Issuer's Bond Token Balance ---
-                        const issuerBondBalance = await tokenizedBondInstance.balanceOf(issuerSigner.address);
-                        const bondTokenSymbol = await tokenizedBondInstance.symbol();
-                        console.log(`  Verification: Issuer ${issuerSigner.address} now holds ${issuerBondBalance.toString()} ${bondTokenSymbol} tokens.`);
-                        // Verify against the calculated total fractional tokens
-                        if (issuerBondBalance !== totalFractionalTokensToExpect) {
-                            console.warn(`  ⚠️ Warning: Issuer balance (${issuerBondBalance}) does not match expected total fractional tokens (${totalFractionalTokensToExpect})!`);
-                        }
-
-                    } catch (mintError) {
-                         // Improve error logging for mint failure
-                        console.error(`  ❌ Error calling mintBond for Bond ID ${currentBondId}:`);
-                        // Log the reason if available (often helpful for debugging contract reverts)
-                        if (mintError.reason) {
-                             console.error(`     Reason: ${mintError.reason}`);
-                        } else {
-                             console.error(mintError); // Log full error if no reason found
-                        }
-                    }
-
                 } else {
-                     console.error(`  💥 Failed to retrieve valid address for Bond ID ${currentBondId}! Cannot get instance or mint.`);
+                     console.error(`  💥 Failed to retrieve valid address for Bond ID ${currentBondId}! Cannot get instance.`);
                 }
             } catch (error) {
                  console.error(`  ❌ Error during creation/retrieval for Bond ID ${currentBondId}:`, error);
@@ -309,11 +282,12 @@ async function main() {
             console.log(`  Maturity Date: ${bondDetailsAfter.maturityDate} (Expected: ${newMaturityDate})`);
             console.log(`  Max Supply: ${bondDetailsAfter.maxBondSupply} (Expected: ${newMaxBondSupply})`);
             console.log(`  Token Price: ${bondDetailsAfter.tokenPrice} (Expected: ${newTokenPrice})`);
-    } catch (error) {
-        console.error(`❌ Error modifying Bond ID ${bondIdToModify}:`, error);
-    }
-        console.log("====================================================");
-    }
+
+        } catch (error) {
+            console.error(`❌ Error modifying Bond ID ${bondIdToModify}:`, error);
+        }
+            console.log("====================================================");
+        }
 
  //===========================================================================================================   
 
@@ -396,8 +370,8 @@ async function main() {
             const finalBalance = await mockStablecoin.balanceOf(bondAddress);
 
             console.log(`  Bond ID ${bondId} (${bondAddress}):`);
-            console.log(`    Expected Funding: ${ethers.formatUnits(expectedFunding, stablecoinDecimals)} ${tokenSymbol}`);
-            console.log(`    Actual Balance:   ${ethers.formatUnits(finalBalance, stablecoinDecimals)} ${tokenSymbol}`);
+            console.log(`    Expected Funding: ${ethers.formatUnits(expectedFunding, stablecoinDecimals)} ${stablecoinSymbol}`);
+            console.log(`    Actual Balance:   ${ethers.formatUnits(finalBalance, stablecoinDecimals)} ${stablecoinSymbol}`);
 
             // Optional: Add a check for discrepancy
             if (finalBalance !== expectedFunding) {
@@ -418,7 +392,7 @@ async function main() {
     // Define a large amount (e.g., 1 Million stablecoins)
     // Use parseUnits to handle decimals correctly
     const largeAmountToMint = ethers.parseUnits("1000000", stablecoinDecimals);
-    console.log(`Attempting to mint ${ethers.formatUnits(largeAmountToMint, stablecoinDecimals)} ${tokenSymbol} to each player (${playerSigners.length} players)...`);
+    console.log(`Attempting to mint ${ethers.formatUnits(largeAmountToMint, stablecoinDecimals)} ${stablecoinSymbol} to each player (${playerSigners.length} players)...`);
 
     for (const player of playerSigners) {
         const playerAddress = player.address;
@@ -430,7 +404,7 @@ async function main() {
             // Verify the player's new balance
             const finalBalance = await mockStablecoin.balanceOf(playerAddress);
             console.log(`  ✅ Minted successfully.`);
-            console.log(`  Player ${playerAddress} final ${tokenSymbol} balance: ${ethers.formatUnits(finalBalance, stablecoinDecimals)}`);
+            console.log(`  Player ${playerAddress} final ${stablecoinSymbol} balance: ${ethers.formatUnits(finalBalance, stablecoinDecimals)}`);
 
         } catch (error) {
             console.error(`  ❌ Error minting stablecoins to ${playerAddress}:`, error.reason || error);
@@ -438,6 +412,229 @@ async function main() {
     }
     console.log("\n--- Player Stablecoin Funding Complete ---");
     console.log("====================================================");
+
+//===========================================================================================================
+    // === Listing Bonds on Marketplace ===
+    console.log("\n=== Listing Bonds on Marketplace ===");
+    let listedBondsCount = 0;
+    const listingPrices = {}; // Store the price used for listing { bondId: price }
+    const listedBondIds = []; // Store successfully listed bond IDs
+
+    // Iterate through the bonds that were successfully created and have an instance
+    for (const bondIdStr in createdBondInstances) {
+        const bondId = BigInt(bondIdStr);
+        const bondInstance = createdBondInstances[bondIdStr];
+        const issuerSigner = bondIssuers[bondIdStr]; // Get the signer who issued this bond
+        const bondAddress = await bondInstance.getAddress();
+        // Retrieve the original token price set during creation (optional, could set a different listing price)
+        const creationPrice = bondCreationDetails[bondIdStr]?.tokenPrice;
+
+        // Define the listing price - let's use the creation price for simplicity, or default if missing
+        const listingPrice = creationPrice || ethers.parseUnits("1.00", stablecoinDecimals); // Default to 1.00 if creation price not found
+        listingPrices[bondIdStr] = listingPrice; // Store for modification check later
+
+        if (!issuerSigner) {
+            console.log(`  Skipping listing for Bond ID ${bondId}: Issuer information missing.`);
+            continue;
+        }
+
+        console.log(`\nAttempting to list Bond ID ${bondId} by Issuer ${issuerSigner.address}...`);
+        console.log(`  Bond Address: ${bondAddress}`);
+        console.log(`  Listing Price: ${ethers.formatUnits(listingPrice, stablecoinDecimals)} ${stablecoinSymbol} (${listingPrice} units)`);
+
+        try {
+            // The ISSUER connects to the marketplace contract and calls listBond
+            const listTx = await bondMarketplace.connect(issuerSigner).listBond(
+                bondId,
+                bondAddress, // Pass the bond contract address
+                listingPrice
+            );
+            await listTx.wait();
+            console.log(`  ✅ Bond ID ${bondId} listed successfully.`);
+            listedBondsCount++;
+            listedBondIds.push(bondId);
+
+            // Optional Verification: Check marketplace state
+            try {
+                const marketListing = await bondMarketplace.bondListings(bondId);
+                 if (marketListing.isListed && marketListing.listingPrice === listingPrice && marketListing.issuer === issuerSigner.address) {
+                     console.log(`  Verification: Marketplace listing confirmed for Bond ID ${bondId}.`);
+                 } else {
+                     console.warn(`  ⚠️ Verification failed for Bond ID ${bondId} listing details!`);
+                     console.log(`     Expected Issuer: ${issuerSigner.address}, Got: ${marketListing.issuer}`);
+                     console.log(`     Expected Price: ${listingPrice}, Got: ${marketListing.listingPrice}`);
+                     console.log(`     Expected Listed: true, Got: ${marketListing.isListed}`);
+                 }
+            } catch (verifyError) {
+                 console.error(`  Error verifying marketplace listing for ${bondId}:`, verifyError);
+            }
+
+        } catch (error) {
+            // Log specific revert reasons if available
+            console.error(`  ❌ Error listing Bond ID ${bondId}:`, error.reason || error);
+        }
+        console.log("----------------------------------------------------");
+    }
+    console.log(`\n--- Bond Listing Complete: ${listedBondsCount} bonds listed on the marketplace ---`);
+    console.log("====================================================");
+//===========================================================================================================
+
+    console.log("\n=== Modifying a Bond Listing Price ===");
+
+    // Let's try to modify the listing for the *first* bond we listed (if any)
+    const bondIdsListed = Object.keys(listingPrices);
+
+    if (bondIdsListed.length === 0) {
+        console.log("No bonds were successfully listed, cannot attempt modification.");
+    } else {
+        const bondIdToModifyStr = bondIdsListed[0]; // Get the ID of the first listed bond
+        const bondIdToModify = BigInt(bondIdToModifyStr);
+        const modifierSigner = bondIssuers[bondIdToModifyStr]; // Get the original issuer
+        const originalListingPrice = listingPrices[bondIdToModifyStr];
+
+        // Define a new price (e.g., increase it slightly)
+        const newListingPriceStr = "1.05"; // $1.05
+        const newListingPrice = ethers.parseUnits(newListingPriceStr, stablecoinDecimals);
+
+        console.log(`Attempting to modify listing for Bond ID ${bondIdToModify} by Issuer ${modifierSigner.address}...`);
+        console.log(`  Original Listing Price: ${ethers.formatUnits(originalListingPrice, stablecoinDecimals)} ${stablecoinSymbol}`);
+        console.log(`  New Listing Price: ${newListingPriceStr} ${stablecoinSymbol} (${newListingPrice} units)`);
+
+        try {
+            // The ISSUER connects to the marketplace and calls modifyListing
+            const modifyTx = await bondMarketplace.connect(modifierSigner).modifyListing(
+                bondIdToModify,
+                newListingPrice
+            );
+            await modifyTx.wait();
+            console.log(`  ✅ Listing for Bond ID ${bondIdToModify} modified successfully.`);
+
+            // Verification
+            try {
+                const updatedListing = await bondMarketplace.bondListings(bondIdToModify);
+                if (updatedListing.isListed && updatedListing.listingPrice === newListingPrice) {
+                    console.log(`  Verification: Marketplace price updated successfully for Bond ID ${bondIdToModify}. New Price: ${ethers.formatUnits(updatedListing.listingPrice, stablecoinDecimals)}`);
+                } else {
+                    console.warn(`  ⚠️ Verification failed for price modification of Bond ID ${bondIdToModify}!`);
+                    console.log(`     Expected Price: ${newListingPrice}, Got: ${updatedListing.listingPrice}`);
+                    console.log(`     Listed Status: ${updatedListing.isListed}`);
+                }
+            } catch (verifyError) {
+                console.error(`  Error verifying modified listing for ${bondIdToModify}:`, verifyError);
+            }
+
+        } catch (error) {
+            console.error(`  ❌ Error modifying listing for Bond ID ${bondIdToModify}:`, error.reason || error);
+        }
+    }
+
+//===========================================================================================================
+
+    console.log("\n=== Purchasing Bonds via Marketplace ===");
+
+    const purchaseScenarios = [ // Same scenarios
+        { buyer: player2, bondIdToBuy: 10n, amount: 1n },
+        { buyer: player3, bondIdToBuy: 6n, amount: 1n },
+        { buyer: player1, bondIdToBuy: 8n, amount: 1n },
+        { buyer: player4, bondIdToBuy: 1n, amount: 1n }, 
+    ];
+
+    for (const scenario of purchaseScenarios) {
+        const { buyer, bondIdToBuy, amount } = scenario;
+        const bondIdStr = bondIdToBuy.toString();
+
+        console.log(`\n--- Scenario: ${buyer.address} purchasing ${amount} of Bond ID ${bondIdToBuy} ---`);
+
+        // --- 1. Check if Bond and Instance Exist ... ---
+        const bondInstance = createdBondInstances[bondIdStr];
+        // ... [Checks remain the same] ...
+        if (!bondInstance /* || other checks */) { continue; }
+        const bondAddress = await bondInstance.getAddress();
+
+        try {
+            // --- 2. Get CURRENT Internal Price/Details from Contract --- // <<< === CORRECTED STEP ===
+            console.log(`  Fetching CURRENT internal details from Bond Contract ${bondAddress}...`);
+
+            // *** Use the auto-generated getters ***
+            // Adjust based on how you made them public (struct vs direct variables)
+            // Example assuming public 'fractionInfo' struct:
+            const currentFractionInfo = await bondInstance.fractionInfo();
+            const bondInternalTokenPrice = currentFractionInfo.tokenPrice; // Current price per fractional token
+            const tokensPerWholeBond = currentFractionInfo.tokensPerBond;   // Current tokens per bond
+
+            // Example if they were direct public variables:
+            // const bondInternalTokenPrice = await bondInstance.tokenPrice();
+            // const tokensPerWholeBond = await bondInstance.tokensPerBond();
+
+            if (tokensPerWholeBond === 0n) { // Basic sanity check
+                console.log(`  ❌ Cannot proceed: Fetched tokensPerBond is zero for Bond ID ${bondIdToBuy}.`);
+                continue;
+            }
+            console.log(`  Current Bond Internal Token Price (fractional): ${ethers.formatUnits(bondInternalTokenPrice, stablecoinDecimals)}`);
+            console.log(`  Current Bond Internal Tokens Per Bond: ${tokensPerWholeBond}`);
+            // --- End Corrected Step ---
+
+
+            // --- 3. Calculate REQUIRED Cost & Check Buyer Stablecoin Balance ---
+            // Cost is based on the CURRENT internal price fetched above
+            const requiredStablecoinCost = bondInternalTokenPrice * tokensPerWholeBond * amount;
+            const buyerStablecoinBalance = await mockStablecoin.balanceOf(buyer.address);
+            const fractionalTokensToReceive = amount * tokensPerWholeBond;
+
+            console.log(`  REQUIRED Purchase Cost (based on CURRENT internal price): ${ethers.formatUnits(requiredStablecoinCost, stablecoinDecimals)} ${stablecoinSymbol} (${requiredStablecoinCost} units)`);
+            // ... [rest of logging and balance check] ...
+            if (buyerStablecoinBalance < requiredStablecoinCost) { /* ... insufficient balance check ... */ continue; }
+
+
+            // --- 4. Buyer Approves TokenizedBond Contract for REQUIRED Stablecoin Cost ---
+            console.log(`  Approving TokenizedBond (${bondAddress}) to spend ${ethers.formatUnits(requiredStablecoinCost, stablecoinDecimals)} ${stablecoinSymbol} for ${buyer.address}...`);
+            const approveTx = await mockStablecoin.connect(buyer).approve(
+                bondAddress,
+                requiredStablecoinCost // Approve for the amount the bond contract WILL charge
+            );
+            await approveTx.wait();
+            console.log(`  ✅ TokenizedBond contract approved.`);
+
+            const buyerStablecoinBefore = buyerStablecoinBalance; // <<<====== ADD THIS LINE BACK
+            const buyerBondBalanceBefore = await bondInstance.balanceOf(buyer.address);
+
+            // --- 5. Buyer Calls purchaseBond on Marketplace --- // No change here
+            console.log(`  Calling purchaseBond(${bondIdToBuy}, ${amount}) on marketplace for ${buyer.address}...`);
+            const purchaseTx = await bondMarketplace.connect(buyer).purchaseBond(bondIdToBuy, amount);
+            const purchaseReceipt = await purchaseTx.wait();
+            console.log(`  ✅ Purchase transaction successful! Gas used: ${purchaseReceipt.gasUsed.toString()}`);
+
+            // --- 6. Verify Results --- // Use requiredStablecoinCost for verification
+            console.log(`  Verifying balances after purchase...`);
+            const buyerStablecoinAfter = await mockStablecoin.balanceOf(buyer.address);
+            const buyerBondBalanceAfter = await bondInstance.balanceOf(buyer.address);
+
+            const expectedStablecoinAfter = buyerStablecoinBefore - requiredStablecoinCost; // Use correct cost
+            const expectedBondBalanceAfter = buyerBondBalanceBefore + fractionalTokensToReceive;
+
+            console.log(`    Buyer Stablecoin:`);
+            console.log(`      Before: ${ethers.formatUnits(buyerStablecoinBefore, stablecoinDecimals)}`);
+            console.log(`      After:  ${ethers.formatUnits(buyerStablecoinAfter, stablecoinDecimals)} (Expected: ${ethers.formatUnits(expectedStablecoinAfter, stablecoinDecimals)})`);
+            if (buyerStablecoinAfter !== expectedStablecoinAfter) console.warn(`    ⚠️ Stablecoin balance mismatch!`);
+            console.log(`    Buyer Bond Tokens (${await bondInstance.symbol()}):`);
+            console.log(`      Before: ${buyerBondBalanceBefore.toString()}`);
+            console.log(`      After:  ${buyerBondBalanceAfter.toString()} (Expected: ${expectedBondBalanceAfter.toString()})`);
+            if (buyerBondBalanceAfter !== expectedBondBalanceAfter) console.warn(`    ⚠️ Bond token balance mismatch!`);
+
+            // Optional: Verify marketplace analytics update (Note: Uses listingPrice, may differ from actual cost)
+            const listing = await bondMarketplace.bondListings(bondIdToBuy); // Get current listing for analytics
+            const analytics = await bondMarketplace.bondAnalytics(bondIdToBuy);
+            console.log(`    Marketplace Analytics: Trades=${analytics.numberOfTrades}, Volume=${ethers.formatUnits(analytics.totalTradingVolume, stablecoinDecimals)} (Uses Listing Price), LastPrice=${ethers.formatUnits(listing.listingPrice, stablecoinDecimals)} (Listing Price)`); // Clarified which price analytics uses
+
+        } catch (error) {
+            console.error(`  ❌ Error during purchase scenario for Bond ID ${bondIdToBuy} by ${buyer.address}:`, error.reason || error);
+        }
+        console.log("\n--- Bond Purchases Complete ---");
+    }
+
+    
+    console.log("====================================================");
+
 }
 
 main()
