@@ -94,7 +94,7 @@ contract TokenizedBond is ERC20, Ownable {
     event AddedToWhitelist(address indexed account);
     event RemovedFromWhitelist(address indexed account);
     event KycStatusChanged(address indexed account, bool approved);
-    //-------------------------------------------------------
+    //-------------------------------------------------------//
 
     event BondTraded(
         address indexed from,
@@ -275,39 +275,60 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     //-------------------- Purchase functions --------------------//
-    // Purchases are typically individual decisions so we will not implement batch purchases
-
     /**
-     * @notice Purchase bond tokens for a specified buyer by transferring stablecoin.
-     * @dev Mints *new* tokens to the buyer. Requires prior stablecoin approval from the buyer to this contract.
+     * @notice Purchase whole bonds for a specified buyer by transferring stablecoin.
+     * @dev Mints new fractional tokens to the buyer based on the number of whole bonds purchased.
+     *      Requires prior stablecoin approval from the buyer to this contract.
      *      Checks against the maximum offering size (total stablecoin value to raise).
      * @param buyer The address that will receive the bond tokens and pay for them.
-     * @param tokenAmount The amount of individual bond tokens to purchase.
+     * @param bondAmount The number of *whole* bonds to purchase.
      */
-    function purchaseBondFor(address buyer, uint256 tokenAmount) external {
+    function purchaseBondFor(address buyer, uint256 bondAmount) external {
         require(
             buyer != address(0),
             "Bond: Purchase cannot be for zero address"
         );
-        require(tokenAmount > 0, "Bond: Cannot purchase zero tokens");
+        require(bondAmount > 0, "Bond: Cannot purchase zero bonds");
         require(
-            fractionInfo.tokenPrice > 0,
+            fractionInfo.tokenPrice > 0, // Price per fractional token
             "Bond: Token price must be set to purchase"
+        );
+        require(
+            fractionInfo.tokensPerBond > 0, // Need this for calculation
+            "Bond: Tokens per bond must be set"
         );
         require(
             block.timestamp < bondInfo.maturityDate,
             "Bond: Sale period ended (matured)"
         );
-        // --- Calculate Total Cost ---
-        uint256 totalPrice = tokenAmount * fractionInfo.tokenPrice;
-        if (tokenAmount > 0) {
+
+        // --- Calculate Fractional Token Amount ---
+        uint256 fractionalTokenAmount = bondAmount * fractionInfo.tokensPerBond;
+        // Check for overflow in fractional token calculation
+        if (bondAmount > 0) {
+            // Already checked bondAmount > 0, but good practice
             require(
-                totalPrice / tokenAmount == fractionInfo.tokenPrice,
+                fractionalTokenAmount / bondAmount ==
+                    fractionInfo.tokensPerBond,
+                "Bond: Fractional token amount overflow"
+            );
+        }
+        // Ensure fractional amount is also > 0 (implied by bondAmount > 0 and tokensPerBond > 0)
+
+        // --- Calculate Total Stablecoin Cost ---
+        // Cost = (Fractional Tokens) * (Price per Fractional Token)
+        uint256 totalPrice = fractionalTokenAmount * fractionInfo.tokenPrice;
+        // Check for overflow in price calculation
+        if (fractionalTokenAmount > 0) {
+            // fractionalTokenAmount is > 0 if inputs are valid
+            require(
+                totalPrice / fractionalTokenAmount == fractionInfo.tokenPrice,
                 "Bond: Price calculation overflow"
             );
         }
-        require(totalPrice > 0, "Bond: Total price must be positive"); // Since tokenAmount > 0 and tokenPrice > 0
+        // No need to check totalPrice > 0 as inputs guarantee it
 
+        // --- Check Offering Size Limit ---
         // Ensure the total value raised does not exceed the maximum defined for this offering.
         require(
             fractionInfo.totalRaised + totalPrice <=
@@ -315,12 +336,12 @@ contract TokenizedBond is ERC20, Ownable {
             "Bond: Purchase exceeds maximum offering size"
         );
 
+        // --- Check Max Supply Limit ---
         // Calculate max total tokens possible based on max *number* of bonds
         uint256 maxTotalTokens = bondInfo.maxBondSupply *
             fractionInfo.tokensPerBond;
-        // Prevent overflow in maxTotalTokens calculation
+        // Prevent overflow in maxTotalTokens calculation (redundant if constructor checks inputs)
         if (bondInfo.maxBondSupply > 0) {
-            // Ensure no division by zero if maxBondSupply is 0 (though constructor prevents this)
             require(
                 maxTotalTokens / bondInfo.maxBondSupply ==
                     fractionInfo.tokensPerBond,
@@ -328,22 +349,16 @@ contract TokenizedBond is ERC20, Ownable {
             );
         }
         // Ensure minting this amount doesn't exceed the theoretical max token count
+        // Checks current ERC20 totalSupply() + the amount we *will* mint
         require(
-            totalSupply() + tokenAmount <= maxTotalTokens,
+            totalSupply() + fractionalTokenAmount <= maxTotalTokens,
             "Bond: Purchase exceeds max possible token supply"
         );
 
-        // --- Process Stablecoin Payment ---
-        // Pull the 'totalPrice' amount of stablecoins directly from the 'buyer'.
         stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
 
-        // --- Mint Bond Tokens ---
-        // Mint the purchased amount of bond tokens to the buyer.
-        // Note: This increases totalSupply().
-        _mint(buyer, tokenAmount);
+        _mint(buyer, fractionalTokenAmount);
 
-        // --- Update State ---
-        // Increment the total value raised by the amount paid.
         fractionInfo.totalRaised += totalPrice;
 
         // Initialize the last claimed coupon timestamp for the new holder if they are new
@@ -353,7 +368,7 @@ contract TokenizedBond is ERC20, Ownable {
         }
 
         // --- Emit Event ---
-        emit BondPurchased(buyer, tokenAmount);
+        emit BondPurchased(buyer, fractionalTokenAmount); // Emitting fractional amount makes sense here
     }
 
     //-------------------- Claim functions --------------------//
