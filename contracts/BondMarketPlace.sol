@@ -190,36 +190,68 @@ contract BondMarketPlace is Ownable {
     /**
      * @notice Purchase a bond from the marketplace
      * @param bondId The identifier for the bond listing
-     * @param amount The amount of bonds to purchase
+     * @param bondAmount The amount of *whole* bonds to purchase
      */
-    function purchaseBond(uint256 bondId, uint256 amount) external {
+    function purchaseBond(uint256 bondId, uint256 bondAmount) external {
+        // Renamed param for clarity
         BondListing storage listing = bondListings[bondId];
         require(listing.isListed, "Bond is not listed");
         require(!listing.matured, "Bond has matured");
+        require(bondAmount > 0, "Cannot purchase zero bonds"); // Added check
 
-        // Record the purchase in marketplace before actual purchase
-        if (!isExistingHolder(bondId, msg.sender)) {
-            listing.holders.push(msg.sender);
-            userBondCount[msg.sender]++;
+        // --- Calculate Fractional Token Amount ---
+        uint256 tokensPerBond = listing.bondContract.getTokensPerBond(); // OR access via public state/struct getter
+        require(tokensPerBond > 0, "Invalid tokensPerBond");
+        uint256 fractionalTokenAmount = bondAmount * tokensPerBond;
+        // Overflow check
+        if (bondAmount > 0) {
+            // Already checked > 0
+            require(
+                fractionalTokenAmount / bondAmount == tokensPerBond,
+                "Purchase: Fractional token overflow"
+            );
         }
 
-        // Update market analytics
+        // --- Record the purchase in marketplace analytics ---
         MarketAnalytics storage analytics = bondAnalytics[bondId];
-        analytics.lastTradePrice = listing.listingPrice;
-        analytics.historicalPrices.push(listing.listingPrice);
+
+        // Update based on fractional tokens
+        if (analytics.holderBalances[msg.sender] == 0) {
+            // If first time holding this bond type according to analytics
+            userBondCount[msg.sender]++; // Increment count of bond *types* held
+            // listing.holders logic removed previously, assuming it's gone
+        }
+
+        // Update market analytics using calculated fractional amount
+        analytics.lastTradePrice = listing.listingPrice; // This is price per WHOLE bond from listing
+        analytics.historicalPrices.push(listing.listingPrice); // Still log listing price
         analytics.tradingTimes.push(block.timestamp);
         analytics.numberOfTrades++;
-        analytics.totalTradingVolume += amount * listing.listingPrice;
-        analytics.holderBalances[msg.sender] += amount;
+        // Volume calculation uses listing price (per whole bond) * number of whole bonds
+        uint256 stablecoinVolume = listing.listingPrice * bondAmount;
+        // Overflow check for volume
+        if (bondAmount > 0) {
+            // Check bondAmount > 0
+            require(
+                stablecoinVolume / bondAmount == listing.listingPrice,
+                "Purchase: Volume calculation overflow"
+            );
+        }
+        analytics.totalTradingVolume += stablecoinVolume;
 
-        // Update global statistics
-        totalTradingVolume += amount * listing.listingPrice;
-        userTradingVolume[msg.sender] += amount * listing.listingPrice;
+        // *** IMPORTANT: Update holder balance with FRACTIONAL token amount ***
+        analytics.holderBalances[msg.sender] += fractionalTokenAmount;
 
-        // Call the function in the bond contract to purchase the bond
-        listing.bondContract.purchaseBondFor(msg.sender, amount);
+        // --- Update global statistics ---
+        totalTradingVolume += stablecoinVolume;
+        userTradingVolume[msg.sender] += stablecoinVolume;
 
-        emit BondPurchaseRecorded(bondId, msg.sender, amount);
+        // --- Call the function in the bond contract to purchase the bond ---
+        listing.bondContract.purchaseBondFor(msg.sender, bondAmount);
+
+        // --- Emit Event ---
+        // Event should likely reflect fractional tokens and stablecoin amount
+        emit BondPurchaseRecorded(bondId, msg.sender, fractionalTokenAmount);
     }
 
     //--------------------- Coupon Functions --------------------- //
@@ -487,13 +519,15 @@ contract BondMarketPlace is Ownable {
         return (successCounts, totalAmounts);
     }
 
+    //--------------------- Exchange Functions --------------------- //
+
     /**
-     * @notice Exchange bonds between two participants with optional payment
-     * @param bondId The identifier for the bond being exchanged
-     * @param from Address sending the bonds
-     * @param to Address receiving the bonds
-     * @param tokenAmount Amount of bond tokens to exchange
-     * @param stablecoinAmount Amount of stablecoins to pay (0 for gifting)
+     * @notice Exchange bonds between two parties
+     * @param bondId The identifier for the bond listing
+     * @param from The address of the sender
+     * @param to The address of the receiver
+     * @param tokenAmount The amount of tokens to exchange
+     * @param stablecoinAmount The amount of stablecoins to exchange
      */
     function exchangeBonds(
         uint256 bondId,
@@ -507,54 +541,52 @@ contract BondMarketPlace is Ownable {
         require(listing.isListed, "Bond is not listed");
         require(!listing.matured, "Bond has matured");
 
-        // Verify caller is authorized
-        // require(
-        //     msg.sender == from || msg.sender == to,
-        //     "Not authorized for exchange"
-        // );
-
-        // Update market analytics
+        // --- Update Market Analytics ---
         MarketAnalytics storage analytics = bondAnalytics[bondId];
 
         // For paid exchanges, update price tracking
-        if (stablecoinAmount > 0) {
-            // Calculate price per token
-            uint256 pricePerToken = stablecoinAmount / tokenAmount;
-
-            // Update price analytics
+        if (stablecoinAmount > 0 && tokenAmount > 0) {
+            // Added tokenAmount > 0 check for price calc
+            uint256 pricePerToken = stablecoinAmount / tokenAmount; // Price per fractional token
             analytics.lastTradePrice = pricePerToken;
             analytics.historicalPrices.push(pricePerToken);
 
             // Update volume statistics
-            analytics.totalTradingVolume += stablecoinAmount;
+            analytics.totalTradingVolume += stablecoinAmount; // Volume in stablecoin value
             totalTradingVolume += stablecoinAmount;
+            // Associate volume with both parties in a trade
             userTradingVolume[from] += stablecoinAmount;
             userTradingVolume[to] += stablecoinAmount;
         }
 
-        // Update common analytics for both paid trades and gifts
+        // Update common analytics
         analytics.tradingTimes.push(block.timestamp);
         analytics.numberOfTrades++;
 
-        // Update holder balances
+        // --- Update Holder Balances (Marketplace View) ---
+        // Check for underflow before subtracting
+        require(
+            analytics.holderBalances[from] >= tokenAmount,
+            "Analytics: Insufficient sender balance"
+        );
         analytics.holderBalances[from] -= tokenAmount;
         analytics.holderBalances[to] += tokenAmount;
 
-        // Add new holder if needed
-        if (!isExistingHolder(bondId, to)) {
-            listing.holders.push(to);
-            userBondCount[to]++;
-        }
+        // --- REMOVED listing.holders and userBondCount logic ---
 
-        // Execute the exchange through the bond contract
+        // --- Execute the exchange through the bond contract ---
+        // IMPORTANT: This call performs the actual token movements.
+        // Requires BOTH:
+        // 1. 'from' to have approved 'listing.bondContract' for 'tokenAmount' bond tokens.
+        // 2. If stablecoinAmount > 0, 'to' to have approved 'listing.bondContract' for 'stablecoinAmount' stablecoins.
         listing.bondContract.exchangeBonds(
             from,
             to,
-            tokenAmount,
+            tokenAmount, // Fractional bond tokens
             stablecoinAmount
         );
 
-        // Emit appropriate marketplace events
+        // --- Emit appropriate marketplace events ---
         if (stablecoinAmount > 0) {
             emit BondExchanged(bondId, from, to, tokenAmount, stablecoinAmount);
         } else {
@@ -780,5 +812,103 @@ contract BondMarketPlace is Ownable {
         }
 
         return activePositions;
+    }
+    // Add this function to your BondMarketPlace contract
+
+    /**
+     * @notice Get actual bond holdings for a user, including bond addresses, by querying contracts.
+     * @dev Returns parallel arrays of bond IDs, their contract addresses, and token balances.
+     * @dev This provides the most accurate balance, accounting for external transfers.
+     * @dev May be more gas-intensive than getUserHoldings due to external calls.
+     * @dev Relies on iterating through potentially listed bond IDs - efficiency depends on ID density.
+     * @param user The address of the user whose holdings to query.
+     * @return bondIds An array of bond IDs the user holds based on contract balances.
+     * @return bondAddresses An array of corresponding ITokenizedBond contract addresses.
+     * @return balances An array of corresponding token balances for each bond ID.
+     */
+    function getActualUserHoldingsWithDetails(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256[] memory bondIds,
+            address[] memory bondAddresses,
+            uint256[] memory balances
+        )
+    {
+        // --- First Pass: Count actual holdings by querying contracts ---
+        uint256 activeCount = 0;
+        uint256 loopLimit = totalListedBonds + 100; // arbitrary buffer, cannot exceed 1024
+
+        for (uint256 bondId = 1; bondId <= loopLimit; bondId++) {
+            BondListing storage listing = bondListings[bondId];
+            // Check if listing exists (isListed flag) and contract address is valid
+            if (
+                listing.isListed && address(listing.bondContract) != address(0)
+            ) {
+                // Use try-catch for the external call to handle potential reverts
+                try listing.bondContract.balanceOf(user) returns (
+                    uint256 balance
+                ) {
+                    if (balance > 0) {
+                        activeCount++;
+                    }
+                } catch {
+                    continue;
+                }
+            }
+        }
+
+        // --- Second Pass: Populate arrays ---
+        bondIds = new uint256[](activeCount);
+        bondAddresses = new address[](activeCount); // Initialize the new addresses array
+        balances = new uint256[](activeCount);
+        uint256 currentIndex = 0;
+
+        for (uint256 bondId = 1; bondId <= loopLimit; bondId++) {
+            BondListing storage listing = bondListings[bondId];
+            // Check again if listing exists and contract is valid
+            if (
+                listing.isListed && address(listing.bondContract) != address(0)
+            ) {
+                try listing.bondContract.balanceOf(user) returns (
+                    uint256 balance
+                ) {
+                    if (balance > 0) {
+                        bondIds[currentIndex] = bondId;
+                        // Store the bond contract address
+                        bondAddresses[currentIndex] = address(
+                            listing.bondContract
+                        );
+                        balances[currentIndex] = balance;
+                        currentIndex++;
+                        // Optimization: Stop if we've found all expected active positions
+                        if (currentIndex == activeCount) {
+                            break;
+                        }
+                    }
+                } catch {
+                    // Ignore errors and continue
+                    continue;
+                }
+            }
+        }
+
+        return (bondIds, bondAddresses, balances);
+    }
+
+    /**
+     * @notice Get the marketplace's tracked balance for a specific holder of a specific bond.
+     * @param bondId The identifier for the bond listing.
+     * @param holder The address of the holder to query.
+     * @return The balance according to marketplace analytics.
+     */
+    function getAnalyticsHolderBalance(
+        uint256 bondId,
+        address holder
+    ) external view returns (uint256) {
+        // Access the nested mapping directly within the contract
+        return bondAnalytics[bondId].holderBalances[holder];
     }
 }
