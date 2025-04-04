@@ -21,8 +21,15 @@ module.exports = {
         process.env.PLAYER1_PRIVATE_KEY,  
         process.env.PLAYER2_PRIVATE_KEY,
         process.env.PLAYER3_PRIVATE_KEY,
+        process.env.PLAYER4_PRIVATE_KEY,
+        process.env.PLAYER5_PRIVATE_KEY,
       ],
+      timeout: 60000
     },
+    hardhat: {
+      // Default settings usually fine, but can specify timeout
+      timeout: 60000
+    }
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY,

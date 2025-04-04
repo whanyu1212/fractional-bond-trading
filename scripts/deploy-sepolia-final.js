@@ -1,10 +1,11 @@
 const fs = require("fs");
 const { ethers } = require("hardhat");
-const {logBondDetails} = require("../utils/loggers.js");
+const { time } = require("@nomicfoundation/hardhat-network-helpers");
 const BOND_CONTRACT_ARTIFACT_NAME = "TokenizedBond";
 
+
 async function main() {
-    // === Signers === (Same as before)
+    // === Signers === (Hy as the deployer and the rest as participants)ß
     const [deployer, player1, player2, player3, player4, player5] = await ethers.getSigners();
     const playerSigners = [player1, player2, player3, player4, player5];
     console.log("\n=== Signers ===");
@@ -14,7 +15,7 @@ async function main() {
     });
     console.log("====================================================");
 
-    // === Deploy MockStablecoin === (Same as before)
+    // === Deploy MockStablecoin ===
     console.log("\n=== Deploying MockStablecoin ===");
     const tokenName = "BondChain Coin";
     const stablecoinSymbol = "BCC";
@@ -27,7 +28,7 @@ async function main() {
     console.log("Decimals:", stablecoinDecimals);
     console.log("====================================================");
 
-    // === Deploy BondFactory === (Same as before)
+    // === Deploy BondFactory === 
     console.log("\n=== Deploying BondFactory ===");
     const BondFactory = await ethers.getContractFactory("BondFactory");
     const bondFactory = await BondFactory.deploy();
@@ -36,7 +37,7 @@ async function main() {
     console.log(`BondFactory deployed to: ${bondFactoryAddress}`);
     console.log("====================================================");
 
-    // === Deploy BondMarketplace === (Same as before)
+    // === Deploy BondMarketplace 
     console.log("\n=== Deploying BondMarketplace ===");
     const BondMarketplace = await ethers.getContractFactory("BondMarketPlace");
     const bondMarketplace = await BondMarketplace.deploy();
@@ -46,6 +47,7 @@ async function main() {
     console.log("====================================================");
 
     // === Save Deployment Info ===
+    // Writing deployment info to a JSON file
     const network = await ethers.provider.getNetwork();
     const deploymentInfo = {
         network: network.name,
@@ -63,18 +65,17 @@ async function main() {
     console.log("Deployment info saved to deployment-info.json");
     console.log("====================================================");
 
-//============================================================================================================
+    //============================================================================================================
 
     // === Dynamic Bond Creation  ===
     console.log(`\n=== Creating Bonds & Storing Instances ===`);
     const createdBondAddresses = {}; // Store results { bondId: address }
     const createdBondInstances = {}; // Store results { bondId: ethers.Contract instance } 
     const bondIssuers = {}; // Store results { bondId: issuerSigner }
-    const bondCreationDetails = {}; // Store creation details { bondId: { tokenPrice: BigInt, tokensPerBond: BigInt } }
+    const bondCreationDetails = {}; // Store creation details { bondId: { tokenPrice: BigInt, tokensPerBond: BigInt, maturityDate: BigInt, faceValue: BigInt } }
     let bondIdCounter = 1n;
     const bondsPerPlayer = 4;
     const bondsToFund = []; // Store { bondId, instance, issuerSigner, faceValue, maxBondSupply }
-    let successfulMints = 0;
 
     const currentTimestamp = Math.floor(Date.now() / 1000);
 
@@ -130,14 +131,19 @@ async function main() {
 
                     
                     const tokenizedBondInstance = await ethers.getContractAt(
-                        BOND_CONTRACT_ARTIFACT_NAME, // Make sure this matches your compiled contract name
+                        BOND_CONTRACT_ARTIFACT_NAME, 
                         bondAddress
                     );
                     createdBondInstances[currentBondId.toString()] = tokenizedBondInstance;
                     console.log(`  ✅ Stored ethers.js instance for Bond ID ${currentBondId}.`);
                     bondIssuers[currentBondId.toString()] = issuerSigner; // Store the issuer signer
                     console.log(`  Issuer Signer: ${issuerSigner.address}`);
-                    bondCreationDetails[currentBondId.toString()] = { tokenPrice: tokenPrice, tokensPerBond: tokensPerBond }; // Store creation details
+                    bondCreationDetails[currentBondId.toString()] = {
+                        tokenPrice: tokenPrice,         // Needed for reference
+                        tokensPerBond: tokensPerBond,     // Needed for calculations
+                        maturityDate: maturityDate,       // <<< ADDED: Needed for maturity check
+                        faceValue: faceValue            // <<< ADDED: Needed for redemption payout calc
+                    }; // Store creation details
                     console.log(`  Token Price: ${ethers.formatUnits(tokenPrice, stablecoinDecimals)} ${stablecoinSymbol}`);
                     bondsToFund.push({
                         bondId: currentBondId,
@@ -159,6 +165,8 @@ async function main() {
             bondIdCounter++; 
         } 
     } 
+
+    //============================================================================================================
 
     // === Log Summary ===
     console.log("\n=== Creation Summary ===");
@@ -183,8 +191,8 @@ async function main() {
     console.log("====================================================");
 
 
-//============================================================================================================
 
+    //============================================================================================================
 
     // === Try to use the stored instances ===
     console.log("\n=== Example Usage of Stored Instances ===");
@@ -199,8 +207,8 @@ async function main() {
         console.log(`  Bond Name: ${firstBondName}`);
 
         try {
-             const totalSupply = await firstBondInstance.totalSupply(); // Assuming ERC20/similar interface
-             console.log(`  Total Supply: ${ethers.formatUnits(totalSupply, 0)} tokens`); // Assuming 0 decimals for the bond token itself for display
+             const totalSupply = await firstBondInstance.totalSupply(); 
+             console.log(`  Total Supply: ${ethers.formatUnits(totalSupply, 0)} tokens`); // We do not do upfront mint here, so this should be 0
         } catch (e) { console.log("  Could not get totalSupply (maybe not implemented or needs different params).") }
 
         // factory takes care of registry, so we can call it directly to get details
@@ -218,13 +226,13 @@ async function main() {
     console.log("====================================================");
 
 
-//===========================================================================================================
+    //===========================================================================================================
 
 
     console.log("\n=== Attempting to Modify a Bond ===");
 
-    const bondIdToModify = 1n; // <<< CHOOSE WHICH BOND ID TO MODIFY
-    const modifierSigner = player1; // <<< CHOOSE THE SIGNER (should be the issuer or authorized)
+    const bondIdToModify = 1n; // modifying the first bond created just for illustration
+    const modifierSigner = player1; // player 1 is the corresponding signer for this bond
 
     // --- Check if the instance exists ---
     const bondInstanceToModify = createdBondInstances[bondIdToModify.toString()];
@@ -289,8 +297,9 @@ async function main() {
             console.log("====================================================");
         }
 
- //===========================================================================================================   
-
+    //===========================================================================================================
+    
+    // === Funding Bond Contracts ===
     console.log("\n=== Funding Bond Contracts ===");
 
     // --- Calculate total funding needed per player ---
@@ -310,7 +319,8 @@ async function main() {
 
         console.log(`  Bond ID ${bondInfo.bondId}: Requires ${ethers.formatUnits(requiredFunding, stablecoinDecimals)} ${await mockStablecoin.symbol()}`);
     }
-    console.log("==========================================");
+    console.log("====================================================");
+
     // --- Step 1: Deployer Mints Stablecoins directly to Players ---
     console.log("\n--- Deployer Minting Funds to Players ---");
     for (const playerAddress in fundingPerPlayer) {
@@ -318,7 +328,7 @@ async function main() {
         if (totalAmount > 0n) {
             console.log(`  Minting ${ethers.formatUnits(totalAmount, stablecoinDecimals)} ${await mockStablecoin.symbol()} to Player ${playerAddress}...`);
             try {
-                // Deployer owns MockStablecoin, so it can mint to players
+                // Deployer owns MockStablecoin
                 const mintTx = await mockStablecoin.connect(deployer).mint(playerAddress, totalAmount);
                 await mintTx.wait();
                 const playerBalance = await mockStablecoin.balanceOf(playerAddress);
@@ -352,12 +362,11 @@ async function main() {
         } else {
              console.log(`  Skipping funding for Bond ID ${bondId} (amount is zero).`);
         }
-         console.log("----------------------------------------------------");
     }
 
     console.log("====================================================");
 
-//===========================================================================================================
+    //===========================================================================================================
     // Verify funding
     for (const bondInfo of bondsToFund) {
         const bondId = bondInfo.bondId;
@@ -383,12 +392,14 @@ async function main() {
         } catch (error) {
             console.error(`  ❌ Error fetching balance for Bond ID ${bondId} (${bondAddress}):`, error);
         }
-        console.log("============================================");
+        console.log(`\n--- Bond ID ${bondId} funding verification complete ---`);
+        console.log("====================================================");
 
     }
-//===========================================================================================================
-    console.log("\n=== Minting Generous Stablecoin Balance to Players for Purchases ===");
 
+    //===========================================================================================================
+    console.log("\n=== Minting Generous Stablecoin Balance to Players for Purchases ===");
+    // Assume we don't need the players to deposit
     // Define a large amount (e.g., 1 Million stablecoins)
     // Use parseUnits to handle decimals correctly
     const largeAmountToMint = ethers.parseUnits("1000000", stablecoinDecimals);
@@ -413,7 +424,7 @@ async function main() {
     console.log("\n--- Player Stablecoin Funding Complete ---");
     console.log("====================================================");
 
-//===========================================================================================================
+    //===========================================================================================================
     // === Listing Bonds on Marketplace ===
     console.log("\n=== Listing Bonds on Marketplace ===");
     let listedBondsCount = 0;
@@ -424,12 +435,10 @@ async function main() {
     for (const bondIdStr in createdBondInstances) {
         const bondId = BigInt(bondIdStr);
         const bondInstance = createdBondInstances[bondIdStr];
-        const issuerSigner = bondIssuers[bondIdStr]; // Get the signer who issued this bond
+        const issuerSigner = bondIssuers[bondIdStr];
         const bondAddress = await bondInstance.getAddress();
-        // Retrieve the original token price set during creation (optional, could set a different listing price)
         const creationPrice = bondCreationDetails[bondIdStr]?.tokenPrice;
 
-        // Define the listing price - let's use the creation price for simplicity, or default if missing
         const listingPrice = creationPrice || ethers.parseUnits("1.00", stablecoinDecimals); // Default to 1.00 if creation price not found
         listingPrices[bondIdStr] = listingPrice; // Store for modification check later
 
@@ -446,7 +455,7 @@ async function main() {
             // The ISSUER connects to the marketplace contract and calls listBond
             const listTx = await bondMarketplace.connect(issuerSigner).listBond(
                 bondId,
-                bondAddress, // Pass the bond contract address
+                bondAddress, 
                 listingPrice
             );
             await listTx.wait();
@@ -473,11 +482,11 @@ async function main() {
             // Log specific revert reasons if available
             console.error(`  ❌ Error listing Bond ID ${bondId}:`, error.reason || error);
         }
-        console.log("----------------------------------------------------");
     }
     console.log(`\n--- Bond Listing Complete: ${listedBondsCount} bonds listed on the marketplace ---`);
     console.log("====================================================");
-//===========================================================================================================
+
+    //===========================================================================================================
 
     console.log("\n=== Modifying a Bond Listing Price ===");
 
@@ -528,15 +537,23 @@ async function main() {
         }
     }
 
-//===========================================================================================================
+    //===========================================================================================================
 
     console.log("\n=== Purchasing Bonds via Marketplace ===");
 
-    const purchaseScenarios = [ // Same scenarios
+    // player 1 owns Bond 1-4
+    // player 2 owns Bond 5-8
+    // player 3 owns Bond 9-12
+    // player 4 owns Bond 13-16
+    // player 5 owns Bond 17-20
+
+    // Let's fix the purchasing scenarios to use the correct bond IDs and amounts, just for illustration
+    const purchaseScenarios = [
         { buyer: player2, bondIdToBuy: 10n, amount: 1n },
         { buyer: player3, bondIdToBuy: 6n, amount: 1n },
         { buyer: player1, bondIdToBuy: 8n, amount: 1n },
         { buyer: player4, bondIdToBuy: 1n, amount: 1n }, 
+        { buyer: player5, bondIdToBuy: 15n, amount: 1n },
     ];
 
     for (const scenario of purchaseScenarios) {
@@ -547,43 +564,33 @@ async function main() {
 
         // --- 1. Check if Bond and Instance Exist ... ---
         const bondInstance = createdBondInstances[bondIdStr];
-        // ... [Checks remain the same] ...
-        if (!bondInstance /* || other checks */) { continue; }
+
+        if (!bondInstance) { continue; }
         const bondAddress = await bondInstance.getAddress();
 
         try {
-            // --- 2. Get CURRENT Internal Price/Details from Contract --- // <<< === CORRECTED STEP ===
             console.log(`  Fetching CURRENT internal details from Bond Contract ${bondAddress}...`);
-
-            // *** Use the auto-generated getters ***
-            // Adjust based on how you made them public (struct vs direct variables)
-            // Example assuming public 'fractionInfo' struct:
             const currentFractionInfo = await bondInstance.fractionInfo();
-            const bondInternalTokenPrice = currentFractionInfo.tokenPrice; // Current price per fractional token
-            const tokensPerWholeBond = currentFractionInfo.tokensPerBond;   // Current tokens per bond
+            const bondInternalTokenPrice = currentFractionInfo.tokenPrice; 
+            const tokensPerWholeBond = currentFractionInfo.tokensPerBond;
 
-            // Example if they were direct public variables:
-            // const bondInternalTokenPrice = await bondInstance.tokenPrice();
-            // const tokensPerWholeBond = await bondInstance.tokensPerBond();
-
-            if (tokensPerWholeBond === 0n) { // Basic sanity check
+            // --- 2. Check if the tokensPerWholeBond is zero ---
+            if (tokensPerWholeBond === 0n) { 
                 console.log(`  ❌ Cannot proceed: Fetched tokensPerBond is zero for Bond ID ${bondIdToBuy}.`);
                 continue;
             }
             console.log(`  Current Bond Internal Token Price (fractional): ${ethers.formatUnits(bondInternalTokenPrice, stablecoinDecimals)}`);
             console.log(`  Current Bond Internal Tokens Per Bond: ${tokensPerWholeBond}`);
-            // --- End Corrected Step ---
 
 
             // --- 3. Calculate REQUIRED Cost & Check Buyer Stablecoin Balance ---
-            // Cost is based on the CURRENT internal price fetched above
+            // cost = tokenPrice * tokensPerBond * amount (whole bonds)
             const requiredStablecoinCost = bondInternalTokenPrice * tokensPerWholeBond * amount;
             const buyerStablecoinBalance = await mockStablecoin.balanceOf(buyer.address);
             const fractionalTokensToReceive = amount * tokensPerWholeBond;
 
             console.log(`  REQUIRED Purchase Cost (based on CURRENT internal price): ${ethers.formatUnits(requiredStablecoinCost, stablecoinDecimals)} ${stablecoinSymbol} (${requiredStablecoinCost} units)`);
-            // ... [rest of logging and balance check] ...
-            if (buyerStablecoinBalance < requiredStablecoinCost) { /* ... insufficient balance check ... */ continue; }
+            if (buyerStablecoinBalance < requiredStablecoinCost) { continue; }
 
 
             // --- 4. Buyer Approves TokenizedBond Contract for REQUIRED Stablecoin Cost ---
@@ -595,10 +602,10 @@ async function main() {
             await approveTx.wait();
             console.log(`  ✅ TokenizedBond contract approved.`);
 
-            const buyerStablecoinBefore = buyerStablecoinBalance; // <<<====== ADD THIS LINE BACK
+            const buyerStablecoinBefore = buyerStablecoinBalance;
             const buyerBondBalanceBefore = await bondInstance.balanceOf(buyer.address);
 
-            // --- 5. Buyer Calls purchaseBond on Marketplace --- // No change here
+            // --- 5. Buyer Calls purchaseBond on Marketplace --- 
             console.log(`  Calling purchaseBond(${bondIdToBuy}, ${amount}) on marketplace for ${buyer.address}...`);
             const purchaseTx = await bondMarketplace.connect(buyer).purchaseBond(bondIdToBuy, amount);
             const purchaseReceipt = await purchaseTx.wait();
@@ -609,7 +616,7 @@ async function main() {
             const buyerStablecoinAfter = await mockStablecoin.balanceOf(buyer.address);
             const buyerBondBalanceAfter = await bondInstance.balanceOf(buyer.address);
 
-            const expectedStablecoinAfter = buyerStablecoinBefore - requiredStablecoinCost; // Use correct cost
+            const expectedStablecoinAfter = buyerStablecoinBefore - requiredStablecoinCost; 
             const expectedBondBalanceAfter = buyerBondBalanceBefore + fractionalTokensToReceive;
 
             console.log(`    Buyer Stablecoin:`);
@@ -621,8 +628,7 @@ async function main() {
             console.log(`      After:  ${buyerBondBalanceAfter.toString()} (Expected: ${expectedBondBalanceAfter.toString()})`);
             if (buyerBondBalanceAfter !== expectedBondBalanceAfter) console.warn(`    ⚠️ Bond token balance mismatch!`);
 
-            // Optional: Verify marketplace analytics update (Note: Uses listingPrice, may differ from actual cost)
-            const listing = await bondMarketplace.bondListings(bondIdToBuy); // Get current listing for analytics
+            const listing = await bondMarketplace.bondListings(bondIdToBuy); 
             const analytics = await bondMarketplace.bondAnalytics(bondIdToBuy);
             console.log(`    Marketplace Analytics: Trades=${analytics.numberOfTrades}, Volume=${ethers.formatUnits(analytics.totalTradingVolume, stablecoinDecimals)} (Uses Listing Price), LastPrice=${ethers.formatUnits(listing.listingPrice, stablecoinDecimals)} (Listing Price)`); // Clarified which price analytics uses
 
@@ -630,6 +636,7 @@ async function main() {
             console.error(`  ❌ Error during purchase scenario for Bond ID ${bondIdToBuy} by ${buyer.address}:`, error.reason || error);
         }
         console.log("\n--- Bond Purchases Complete ---");
+        console.log("====================================================");
     }
 
     console.log("\n=== Displaying Player Bond Holdings ===");
@@ -637,7 +644,7 @@ async function main() {
     // Loop through each player (player1 to player5)
     for (let i = 0; i < playerSigners.length; i++) {
         const player = playerSigners[i];
-        const playerIndex = i + 1; // For display (Player 1, Player 2, etc.)
+        const playerIndex = i + 1;
         console.log(`\n======= Querying Holdings for Player ${playerIndex} (${player.address}) =======`);
 
         // --- 1. Query Marketplace Internal State (via getUserMetrics) ---
@@ -665,16 +672,12 @@ async function main() {
         } catch (error) {
             // Catch potential errors during the getUserMetrics call
             console.error(`    ❌ Error calling getUserMetrics for Player ${playerIndex}:`, error.reason || error);
-            // Log the full error if no specific reason is provided by the revert
             if (!error.reason) console.error(error);
         }
 
         // --- 2. Query Actual Balances (getActualUserHoldingsWithDetails) ---
         console.log(`\n  --- 2. Actual Holdings via Contract Queries (getActualUserHoldingsWithDetails) ---`);
-        // Note: The accuracy and completeness of this function depend on its internal iteration logic
-        // (e.g., the loopLimit used) and whether all relevant bond contracts are checked.
         try {
-            // Call the external function that queries the underlying bond contracts
             const holdings = await bondMarketplace.getActualUserHoldingsWithDetails(player.address);
 
             // Destructure the returned arrays: IDs, Addresses, Balances
@@ -714,20 +717,483 @@ async function main() {
                     console.log(`        Contract: ${bondAddress}`);
                     console.log(`        Balance: ${balance.toString()} fractional tokens`); // Display the raw fractional token amount
                 }
-                console.log(`      --------------------`); // Footer for the list
+                console.log(`      --------------------`);
             }
         } catch (error) {
             // Catch potential errors during the getActualUserHoldingsWithDetails call
             console.error(`    ❌ Error calling getActualUserHoldingsWithDetails for Player ${playerIndex}:`, error.reason || error);
-            // Log the full error if no specific reason is provided
             if (!error.reason) console.error(error);
         }
         // Separator between players
         console.log(`=============================================================`);
 
-    } // End of player loop
+    } 
 
     console.log("\n--- Player Holdings Display Complete ---");
+    console.log("====================================================");
+
+    //===========================================================================================================
+    console.log("\n=== Exchanging Bonds via Marketplace (Gifting) ===");
+
+    // --- Scenario Definition ---
+    const exchangeScenario = {
+        bondId: 1n,                  // Bond ID 1 (Issued by Player 1, potentially held by Player 4)
+        senderSigner: player4,       // Player 4 is gifting
+        receiverSigner: player2,     // Player 2 is receiving
+        bondTokensToExchange: 500n,  // Gifting 500 fractional tokens (half of a whole bond if tokensPerBond=1000)
+        stablecoinPayment: 0n         // It's a gift, so 0 stablecoin cost
+    };
+    const { bondId, senderSigner, receiverSigner, bondTokensToExchange, stablecoinPayment } = exchangeScenario;
+    const bondIdStr = bondId.toString();
+
+    console.log(`\n--- Scenario: Sender ${senderSigner.address}`);
+    console.log(`             Gifting ${bondTokensToExchange.toString()} fractional tokens of Bond ID ${bondId}`);
+    console.log(`             To Receiver ${receiverSigner.address} ---`);
+
+    // --- 1. Get Bond Instance and Check Existence ---
+    const bondInstance = createdBondInstances[bondIdStr];
+    if (!bondInstance) {
+        // Log error and skip if the bond instance wasn't created/stored earlier
+        console.log(`  ❌ Cannot proceed: Instance for Bond ID ${bondId} not found in script storage.`);
+        console.log(`----------------------------------------------------------`);
+    } else {
+        // Get necessary addresses and symbols for logging/interaction
+        const bondAddress = await bondInstance.getAddress();
+        let bondTokenSymbol = '???';
+        try {
+            bondTokenSymbol = await bondInstance.symbol();
+        } catch {
+            console.warn(`  Warning: Could not fetch symbol for Bond ID ${bondId}`);
+        }
+
+        // --- Main Exchange Logic within Try/Catch ---
+        try {
+            // --- 2. Check Sender's & Receiver's Initial Bond Token Balance ---
+            const senderBalanceBefore = await bondInstance.balanceOf(senderSigner.address);
+            const receiverBalanceBefore = await bondInstance.balanceOf(receiverSigner.address); // Get receiver's starting balance too
+            console.log(`  Balances BEFORE Exchange (${bondTokenSymbol}):`);
+            console.log(`    Sender (${senderSigner.address}): ${senderBalanceBefore.toString()}`);
+            console.log(`    Receiver (${receiverSigner.address}): ${receiverBalanceBefore.toString()}`);
+
+            // Verify sender has enough tokens
+            if (senderBalanceBefore < bondTokensToExchange) {
+                console.log(`  ❌ Cannot proceed: Sender has insufficient ${bondTokenSymbol} tokens (${senderBalanceBefore.toString()}) to gift ${bondTokensToExchange.toString()}.`);
+                // Throw error to jump to catch block for this scenario
+                throw new Error("Insufficient bond tokens for gift.");
+            }
+
+            // --- 3. Sender Approves Bond Contract to Spend Their Bond Tokens ---
+            // The BondMarketplace delegates the actual token transfer to the specific Bond contract's
+            // exchangeBonds function, which likely uses transferFrom. Therefore, the sender must
+            // approve the Bond Contract address itself.
+            console.log(`  Sender approving Bond Contract (${bondAddress}) to spend ${bondTokensToExchange.toString()} ${bondTokenSymbol} tokens...`);
+            const approveTx = await bondInstance.connect(senderSigner).approve(
+                bondAddress,          // Spender is the Bond Contract address
+                bondTokensToExchange  // Amount is the number of fractional tokens
+            );
+            await approveTx.wait(); // Wait for approval transaction to be mined
+            console.log(`  ✅ Bond Contract approved by sender for ${bondTokenSymbol} tokens.`);
+
+            // --- 4. Initiate Exchange (Gift) via Marketplace ---
+            // The transaction is initiated by calling the marketplace function.
+            // Let's assume the sender initiates the call for this scenario.
+            console.log(`  Sender calling exchangeBonds on marketplace (${bondMarketplaceAddress})...`);
+            const exchangeTx = await bondMarketplace.connect(senderSigner).exchangeBonds(
+                bondId,                 // bondId
+                senderSigner.address,   // from address
+                receiverSigner.address, // to address
+                bondTokensToExchange,   // tokenAmount (fractional)
+                stablecoinPayment       // stablecoinAmount (0 for gift)
+            );
+            const exchangeReceipt = await exchangeTx.wait(); // Wait for exchange transaction
+            console.log(`  ✅ Exchange (Gift) transaction successful! Gas used: ${exchangeReceipt.gasUsed.toString()}`);
+
+            // --- 5. Verify Results ---
+            console.log(`  Verifying balances AFTER exchange...`);
+            // Fetch balances again after the transaction
+            const senderBalanceAfter = await bondInstance.balanceOf(senderSigner.address);
+            const receiverBalanceAfter = await bondInstance.balanceOf(receiverSigner.address);
+            // Fetch stablecoin balances (should not have changed)
+            const senderStablecoin = await mockStablecoin.balanceOf(senderSigner.address);
+            const receiverStablecoin = await mockStablecoin.balanceOf(receiverSigner.address);
+
+            // Calculate expected balances
+            const expectedSenderBalanceAfter = senderBalanceBefore - bondTokensToExchange;
+            const expectedReceiverBalanceAfter = receiverBalanceBefore + bondTokensToExchange; // Use receiver's actual starting balance
+
+            // Log bond token balances
+            console.log(`    Sender ${bondTokenSymbol}:`);
+            console.log(`      Before: ${senderBalanceBefore.toString()}`);
+            console.log(`      After:  ${senderBalanceAfter.toString()} (Expected: ${expectedSenderBalanceAfter.toString()})`);
+            console.log(`    Receiver ${bondTokenSymbol}:`);
+            console.log(`      Before: ${receiverBalanceBefore.toString()}`); // Show actual starting balance
+            console.log(`      After:  ${receiverBalanceAfter.toString()} (Expected: ${expectedReceiverBalanceAfter.toString()})`);
+            // Log stablecoin balances
+            console.log(`    Sender ${stablecoinSymbol} (Should be unchanged): ${ethers.formatUnits(senderStablecoin, stablecoinDecimals)}`);
+            console.log(`    Receiver ${stablecoinSymbol} (Should be unchanged): ${ethers.formatUnits(receiverStablecoin, stablecoinDecimals)}`);
+
+            // --- Basic Balance Checks ---
+            let balancesMatch = true;
+            if (senderBalanceAfter !== expectedSenderBalanceAfter) {
+                console.warn(`    ⚠️ Sender bond token balance mismatch!`);
+                balancesMatch = false;
+            }
+            if (receiverBalanceAfter !== expectedReceiverBalanceAfter) {
+                console.warn(`    ⚠️ Receiver bond token balance mismatch!`);
+                balancesMatch = false;
+            }
+            if (balancesMatch) {
+                console.log(`    ✅ Bond token balances verified successfully.`);
+            }
+
+            // --- Optional: Verify marketplace analytics update ---
+            console.log(`    Verifying marketplace analytics...`);
+            try {
+                // Get general analytics first (for trade count etc.)
+                const analyticsSummary = await bondMarketplace.bondAnalytics(bondId);
+                // Get specific holder balances using the dedicated getter
+                const senderAnalyticsBalance = await bondMarketplace.getAnalyticsHolderBalance(bondId, senderSigner.address);
+                const receiverAnalyticsBalance = await bondMarketplace.getAnalyticsHolderBalance(bondId, receiverSigner.address);
+
+                console.log(
+                    `    Marketplace Analytics: Trades=${analyticsSummary.numberOfTrades}, Sender Balance (Analytics): ${senderAnalyticsBalance.toString()}, Receiver Balance (Analytics): ${receiverAnalyticsBalance.toString()}`
+                );
+
+            } catch (analyticsError) {
+                console.error("     Error fetching/displaying marketplace analytics:", analyticsError);
+            }
+
+        // --- Catch block for errors during the exchange process ---
+        } catch (error) {
+            console.error(`  ❌ Error during exchange scenario for Bond ID ${bondId}:`, error.reason || error);
+            if (!error.reason) console.error(error);
+        }
+    }
+
+    console.log("\n--- Bond Exchanges Complete ---");
+    console.log("====================================================");
+
+    //===========================================================================================================
+    // console.log("\n=== Simulating Time Passing for Coupon Payments ===");
+
+    // const sixMonthsOneDay = (183 * 24 * 60 * 60); // Approx 6 months in seconds + 1 day buffer
+    // console.log(`Advancing time by ~6 months (${sixMonthsOneDay} seconds)...`);
+
+    // await time.increase(sixMonthsOneDay);
+
+    // // The new timestamp after advancing time for 6 months and 1 day
+    // const newTimestamp = await time.latest();
+
+    // console.log(`✅ Time advanced. Current block timestamp: ${newTimestamp}`);
+    // console.log("====================================================");
+
+    // console.log("\n=== Claiming Coupons via Marketplace (multiClaimCoupons) ===");
+
+    // // --- 1. Identify Potential Claimers and Bonds ---
+    // const bondIdsToClaimFor = [];
+    // const claimersPerBond = []; // Array of arrays: address[][]
+    // const claimerStablecoinBefore = {}; // Track balances before { address: balance }
+
+    // console.log("Identifying current bond holders to attempt claims...");
+    // for (let i = 0; i < playerSigners.length; i++) {
+    //     const player = playerSigners[i];
+    //     try {
+    //         const holdings = await bondMarketplace.getActualUserHoldingsWithDetails(player.address);
+    //         const [heldBondIds, , balances] = holdings; // We only need IDs and confirmation of balance>0
+
+    //         for (let k = 0; k < heldBondIds.length; k++) {
+    //             const bondId = heldBondIds[k];
+    //             const balance = balances[k];
+
+    //             if (balance > 0n) { // If player actually holds tokens for this bond
+    //                 const bondIdStr = bondId.toString();
+    //                 // Find the index for this bondId in our arrays
+    //                 let bondIndex = bondIdsToClaimFor.findIndex(id => id === bondId);
+
+    //                 if (bondIndex === -1) {
+    //                     // If this bondId isn't in our list yet, add it
+    //                     bondIdsToClaimFor.push(bondId);
+    //                     claimersPerBond.push([]); // Add an empty array for its claimers
+    //                     bondIndex = bondIdsToClaimFor.length - 1; // Get the new index
+    //                 }
+
+    //                 // Add this player to the list of claimers for this bond
+    //                 if (!claimersPerBond[bondIndex].includes(player.address)) {
+    //                     claimersPerBond[bondIndex].push(player.address);
+    //                      console.log(`  -> Marked Player ${i+1} (${player.address}) to claim for Bond ID ${bondId}`);
+
+    //                     // Store stablecoin balance before claim
+    //                      if (!claimerStablecoinBefore[player.address]) {
+    //                         claimerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
+    //                      }
+    //                 }
+    //             }
+    //         }
+    //     } catch (error) {
+    //         console.error(`  Error identifying holdings for Player ${i+1}: ${error}`);
+    //     }
+    // }
+
+    // // --- 2. Check if there's anything to claim ---
+    // if (bondIdsToClaimFor.length === 0) {
+    //     console.log("\nNo holders identified with positive balances. Skipping multiClaimCoupons call.");
+    // } else {
+    //     console.log("\n--- Prepared Data for multiClaimCoupons ---");
+    //     console.log("Bond IDs:", bondIdsToClaimFor.map(id => id.toString()));
+
+    //     // --- 3. Call multiClaimCoupons ---
+    //     console.log("\nCalling multiClaimCoupons on marketplace...");
+    //     try {
+    //         // Use deployer or any player to initiate the call
+    //         const claimTx = await bondMarketplace.connect(deployer).multiClaimCoupons(
+    //             bondIdsToClaimFor,
+    //             claimersPerBond
+    //         );
+    //         const claimReceipt = await claimTx.wait();
+    //         console.log(`✅ multiClaimCoupons transaction successful! Gas used: ${claimReceipt.gasUsed.toString()}`);
+
+    //         // --- 4. Log Results from Transaction ---
+    //         console.log("\n--- Verifying Stablecoin Balances After Claim ---");
+    //         for (const playerAddress in claimerStablecoinBefore) {
+    //             const balanceBefore = claimerStablecoinBefore[playerAddress];
+    //             const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
+    //             const difference = balanceAfter - balanceBefore;
+
+    //             console.log(`  Player ${playerAddress}:`);
+    //             console.log(`    Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //             console.log(`    Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //             if (difference > 0n) {
+    //                 console.log(`    💰 Received: ${ethers.formatUnits(difference, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //             } else {
+    //                  console.log(`    (No change or potential issue)`);
+    //             }
+    //         }
+
+    //     } catch (error) {
+    //         console.error(`  ❌ Error calling multiClaimCoupons:`, error.reason || error);
+    //         if (!error.reason) console.error(error);
+    //     }
+    // }
+    // console.log("\n--- Coupon Claims Complete ---");
+    // console.log("====================================================");
+
+    //===========================================================================================================
+    // console.log("\n=== Simulating Time Passing to Bond Maturity ===");
+
+    // // Advance time significantly further to ensure most/all bonds mature.
+    // // If the longest maturity was ~3 years from creation, let's add ~3 more years.
+    // const threeYears = (3 * 365 * 24 * 60 * 60); // Approx seconds
+    // console.log(`Advancing time by ~3 more years (${threeYears} seconds)...`);
+
+    // await time.increase(threeYears);
+
+    // const maturityCheckTimestamp = await time.latest();
+    // console.log(`✅ Time advanced. Current block timestamp for maturity check: ${maturityCheckTimestamp}`);
+    // console.log("====================================================");
+
+    // //===========================================================================================================
+    // // === UPDATING BOND MATURITY STATUS ON MARKETPLACE ===
+    // console.log("\n=== Updating Bond Maturity Status on Marketplace ===");
+
+    // const maturedBondIds = []; // Keep track of IDs marked as matured
+
+    // // Iterate through all created bonds
+    // for (const bondIdStr in createdBondInstances) {
+    //     const bondId = BigInt(bondIdStr);
+    //     const creationDetails = bondCreationDetails[bondIdStr]; // Fetch stored details
+
+    //     if (!creationDetails || !creationDetails.maturityDate) {
+    //         console.log(`  Skipping Bond ID ${bondId}: Maturity date not found in script storage.`);
+    //         continue;
+    //     }
+
+    //     const maturityDate = creationDetails.maturityDate;
+
+    //     // Check if current time is past the bond's maturity date
+    //     if (maturityCheckTimestamp >= maturityDate) {
+    //         console.log(`\n  Bond ID ${bondId} has matured (Maturity: ${maturityDate}, Current: ${maturityCheckTimestamp}).`);
+    //         console.log(`  Attempting to update status on marketplace via deployer (${deployer.address})...`);
+
+    //         try {
+    //              // Check current status first (optional)
+    //              const listingBefore = await bondMarketplace.bondListings(bondId);
+    //              if (listingBefore.matured) {
+    //                  console.log(`    Status already marked as matured on marketplace.`);
+    //                  maturedBondIds.push(bondId); // Still add to our list
+    //                  continue;
+    //              }
+
+    //             // Call updateBondMaturity as the deployer (marketplace owner)
+    //             const updateTx = await bondMarketplace.connect(deployer).updateBondMaturity(
+    //                 bondId,
+    //                 true // Set matured status to true
+    //             );
+    //             await updateTx.wait();
+    //             console.log(`  ✅ Marketplace status updated for Bond ID ${bondId}.`);
+    //             maturedBondIds.push(bondId); // Add to list of successfully updated bonds
+
+    //             // Verify marketplace state (optional)
+    //             const listingAfter = await bondMarketplace.bondListings(bondId);
+    //             if (!listingAfter.matured) {
+    //                  console.warn(`  ⚠️ Verification failed: Marketplace status did not update for Bond ID ${bondId}.`);
+    //             }
+
+    //         } catch (error) {
+    //             console.error(`  ❌ Error updating maturity status for Bond ID ${bondId}:`, error.reason || error);
+    //         }
+    //     } else {
+    //         console.log(`  Bond ID ${bondId} has not matured yet.`);
+    //     }
+    // }
+    // console.log(`\n--- Maturity Status Update Complete: ${maturedBondIds.length} bonds marked as matured ---`);
+    // console.log("====================================================");
+
+    //===========================================================================================================
+    // === REDEEMING BONDS ===
+    // console.log("\n=== Redeeming Bonds via Marketplace (multiRedeemBonds) ===");
+
+    // // --- 1. Identify Potential Redeemers for Matured Bonds ---
+    // const bondIdsToRedeemFor = [];
+    // const redeemersPerBond = []; // Array of arrays: address[][]
+    // const redeemerStablecoinBefore = {}; // Track balances before { address: balance }
+    // const expectedPayouts = {}; // Track expected payout { address: totalPayout }
+    // const bondsBeingRedeemed = {}; // Track bonds being redeemed { bondId: { faceValue: X, tokensPerBond: Y } }
+
+    // console.log("Identifying holders of matured bonds to attempt redemptions...");
+
+    // // Only loop through bonds confirmed as matured on the marketplace
+    // for (const bondId of maturedBondIds) {
+    //     const bondIdStr = bondId.toString();
+    //     const bondInstance = createdBondInstances[bondIdStr];
+    //     const creationDetails = bondCreationDetails[bondIdStr];
+
+    //     if (!bondInstance || !creationDetails || !creationDetails.faceValue || !creationDetails.tokensPerBond) {
+    //          console.warn(`  Skipping Bond ID ${bondId}: Instance or creation details (faceValue, tokensPerBond) missing.`);
+    //          continue;
+    //     }
+    //     const faceValue = creationDetails.faceValue;
+    //     const tokensPerBond = creationDetails.tokensPerBond;
+    //     bondsBeingRedeemed[bondIdStr] = { faceValue, tokensPerBond }; // Store for payout calculation
+
+    //     let foundHoldersForThisBond = false;
+    //     const currentRedeemers = [];
+
+    //     // Find all current holders for this specific matured bond
+    //     for (let i = 0; i < playerSigners.length; i++) {
+    //         const player = playerSigners[i];
+    //         try {
+    //             const balance = await bondInstance.balanceOf(player.address);
+
+    //             if (balance > 0n) { // If player holds tokens for this matured bond
+    //                 foundHoldersForThisBond = true;
+    //                 currentRedeemers.push(player.address);
+    //                 console.log(`  -> Marked Player ${i+1} (${player.address}) to redeem ${balance.toString()} tokens for Bond ID ${bondId}`);
+
+    //                 // Store stablecoin balance before redemption
+    //                 if (!redeemerStablecoinBefore[player.address]) {
+    //                     redeemerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
+    //                 }
+    //                 // Calculate expected payout for this redemption
+    //                 // Payout = (Fractional Tokens Redeemed * Face Value per Whole Bond) / Tokens per Whole Bond
+    //                 const payout = (balance * faceValue) / tokensPerBond; // BigInt arithmetic
+    //                 if (!expectedPayouts[player.address]) {
+    //                     expectedPayouts[player.address] = 0n;
+    //                 }
+    //                 expectedPayouts[player.address] += payout; // Accumulate expected payout
+    //             }
+    //         } catch (balanceError) {
+    //              console.error(`  Error checking balance for Player ${i+1} on Bond ID ${bondId}: ${balanceError}`);
+    //         }
+    //     }
+
+    //     // If holders were found for this matured bond, add it to the batch call arrays
+    //     if (foundHoldersForThisBond) {
+    //         bondIdsToRedeemFor.push(bondId);
+    //         redeemersPerBond.push(currentRedeemers);
+    //     }
+    // } // End loop through maturedBondIds
+
+    // // --- 2. Check if there's anything to redeem ---
+    // if (bondIdsToRedeemFor.length === 0) {
+    //     console.log("\nNo holders identified for matured bonds. Skipping multiRedeemBonds call.");
+    // } else {
+    //     console.log("\n--- Prepared Data for multiRedeemBonds ---");
+    //     console.log("Bond IDs:", bondIdsToRedeemFor.map(id => id.toString()));
+    //     console.log("Redeemers per Bond:", redeemersPerBond); //
+
+    //     // --- 3. Call multiRedeemBonds ---
+    //     console.log("\nCalling multiRedeemBonds on marketplace...");
+    //     try {
+    //         // Use deployer or any player to initiate the call
+    //         const redeemTx = await bondMarketplace.connect(deployer).multiRedeemBonds(
+    //             bondIdsToRedeemFor,
+    //             redeemersPerBond
+    //         );
+    //         const redeemReceipt = await redeemTx.wait();
+    //         console.log(`✅ multiRedeemBonds transaction successful! Gas used: ${redeemReceipt.gasUsed.toString()}`);
+
+    //         // --- 4. Verify Results ---
+    //         console.log("\n--- Verifying Balances After Redemption ---");
+
+    //         // Verify Stablecoin Balances of Redeemers
+    //         console.log("  Verifying Redeemer Stablecoin Balances:");
+    //         for (const playerAddress in redeemerStablecoinBefore) {
+    //             const balanceBefore = redeemerStablecoinBefore[playerAddress];
+    //             const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
+    //             const expectedPayout = expectedPayouts[playerAddress] || 0n;
+    //             const expectedBalanceAfter = balanceBefore + expectedPayout;
+
+    //             console.log(`    Player ${playerAddress}:`);
+    //             console.log(`      Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //             console.log(`      Expected Payout: ${ethers.formatUnits(expectedPayout, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //             console.log(`      Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol} (Expected: ${ethers.formatUnits(expectedBalanceAfter, stablecoinDecimals)})`);
+    //             if (balanceAfter !== expectedBalanceAfter) {
+    //                 console.warn(`      ⚠️ Stablecoin balance mismatch!`);
+    //             }
+    //         }
+
+    //         // Verify Bond Token Balances of Redeemers (should be 0 for redeemed bonds)
+    //         console.log("\n  Verifying Redeemer Bond Token Balances:");
+    //         for (let i = 0; i < bondIdsToRedeemFor.length; i++) {
+    //             const bondId = bondIdsToRedeemFor[i];
+    //             const bondIdStr = bondId.toString();
+    //             const bondInstance = createdBondInstances[bondIdStr];
+    //             const redeemers = redeemersPerBond[i];
+
+    //             if (bondInstance) {
+    //                 console.log(`    Checking Bond ID ${bondId}:`);
+    //                 for (const redeemerAddress of redeemers) {
+    //                     const balanceAfter = await bondInstance.balanceOf(redeemerAddress);
+    //                     console.log(`      Redeemer ${redeemerAddress} Balance: ${balanceAfter.toString()} (Expected: 0)`);
+    //                     if (balanceAfter !== 0n) {
+    //                         console.warn(`      ⚠️ Bond token balance not zero after redemption!`);
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //          // Optional: Verify Stablecoin Balances of Bond Contracts
+    //          console.log("\n  Verifying Bond Contract Stablecoin Balances (Should decrease):");
+    //          // Need balances *before* redemption if exact decrease check is desired
+    //          for (const bondId of bondIdsToRedeemFor) {
+    //              const bondIdStr = bondId.toString();
+    //              const bondInstance = createdBondInstances[bondIdStr];
+    //              if (bondInstance) {
+    //                  const bondAddress = await bondInstance.getAddress();
+    //                  const balanceAfter = await mockStablecoin.balanceOf(bondAddress);
+    //                  console.log(`    Bond ID ${bondId} (${bondAddress}) Balance: ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
+    //              }
+    //          }
+
+    //     } catch (error) {
+    //         console.error(`  ❌ Error calling multiRedeemBonds:`, error.reason || error);
+    //         if (!error.reason) console.error(error);
+    //     }
+    // }
+    // console.log("\n--- Bond Redemptions Complete ---");
+    // console.log("====================================================");
+
+    console.log("\n=== Script Execution Complete ===");
     console.log("====================================================");
 
 }
