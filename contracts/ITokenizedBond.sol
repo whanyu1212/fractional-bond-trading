@@ -42,6 +42,7 @@ interface ITokenizedBond is IERC20 {
     function tokensPerBond() external view returns (uint256);
     function bondPrice() external view returns (uint256);
     function totalRaised() external view returns (uint256);
+    function getTokensPerBond() external view returns (uint256);
 
     //-------------------- State-Changing Functions --------------------//
     /**
@@ -70,6 +71,13 @@ interface ITokenizedBond is IERC20 {
      */
     function redeemFor(address holder) external;
 
+    /**
+     * @notice exchange of bond tokens between 2 participants
+     * @param from The address of the sender
+     * @param to The address of the receiver
+     * @param tokenAmount The amount of tokens to exchange
+     * @param stablecoinAmount The amount of stablecoins to exchange
+     */
     function exchangeBonds(
         address from,
         address to,
@@ -77,10 +85,22 @@ interface ITokenizedBond is IERC20 {
         uint256 stablecoinAmount
     ) external;
 
+    /**
+     * @notice Batch claim coupon payments for multiple holders
+     * @param claimers The addresses of the holders for whom to claim coupons
+     * @return successfulClaims An array of booleans indicating the success of each claim
+     * @return totalClaimed The total amount of coupons claimed
+     */
     function batchClaimCoupons(
         address[] calldata claimers
     ) external returns (bool[] memory successfulClaims, uint256 totalClaimed);
 
+    /**
+     * @notice Batch redeem bonds for multiple holders
+     * @param redeemers The addresses of the holders to redeem bonds for
+     * @return successfulRedemptions An array of booleans indicating the success of each redemption
+     * @return totalRedeemed The total amount of bonds redeemed
+     */
     function batchRedeemBonds(
         address[] calldata redeemers
     )

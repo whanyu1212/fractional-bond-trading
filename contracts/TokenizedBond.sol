@@ -183,6 +183,10 @@ contract TokenizedBond is ERC20, Ownable {
         return address(stablecoin);
     }
 
+    function getTokensPerBond() external view returns (uint256) {
+        return fractionInfo.tokensPerBond;
+    }
+
     //-------------------- Owner functions --------------------//
 
     /**
