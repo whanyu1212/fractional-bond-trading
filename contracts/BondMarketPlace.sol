@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @notice This is a simple implementation which may not be production-ready
  */
 contract BondMarketPlace is Ownable {
-    constructor() Ownable(msg.sender) {}
+    constructor() Ownable(msg.sender) {} // Single address as the "owner" of the marketplace
     // --------------------- Listing related --------------------- //
 
     struct BondListing {
@@ -73,6 +73,23 @@ contract BondMarketPlace is Ownable {
         uint256 indexed bondId,
         address indexed holder,
         uint256 amount
+    );
+
+    // Exchange event
+    event BondExchanged(
+        uint256 indexed bondId,
+        address indexed from,
+        address indexed to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    );
+
+    // Gift event
+    event BondGifted(
+        uint256 indexed bondId,
+        address indexed from,
+        address indexed to,
+        uint256 tokenAmount
     );
 
     // --------------------- Modifiers --------------------- //
@@ -168,40 +185,76 @@ contract BondMarketPlace is Ownable {
         emit BondDelisted(bondId, msg.sender);
     }
 
+    //--------------------- Purchase Functions --------------------- //
+
     /**
      * @notice Purchase a bond from the marketplace
      * @param bondId The identifier for the bond listing
-     * @param amount The amount of bonds to purchase
+     * @param bondAmount The amount of *whole* bonds to purchase
      */
-    function purchaseBond(uint256 bondId, uint256 amount) external {
+    function purchaseBond(uint256 bondId, uint256 bondAmount) external {
+        // Renamed param for clarity
         BondListing storage listing = bondListings[bondId];
         require(listing.isListed, "Bond is not listed");
         require(!listing.matured, "Bond has matured");
+        require(bondAmount > 0, "Cannot purchase zero bonds"); // Added check
 
-        // Record the purchase in marketplace before actual purchase
-        if (!isExistingHolder(bondId, msg.sender)) {
-            listing.holders.push(msg.sender);
-            userBondCount[msg.sender]++;
+        // --- Calculate Fractional Token Amount ---
+        uint256 tokensPerBond = listing.bondContract.getTokensPerBond(); // OR access via public state/struct getter
+        require(tokensPerBond > 0, "Invalid tokensPerBond");
+        uint256 fractionalTokenAmount = bondAmount * tokensPerBond;
+        // Overflow check
+        if (bondAmount > 0) {
+            // Already checked > 0
+            require(
+                fractionalTokenAmount / bondAmount == tokensPerBond,
+                "Purchase: Fractional token overflow"
+            );
         }
 
-        // Update market analytics
+        // --- Record the purchase in marketplace analytics ---
         MarketAnalytics storage analytics = bondAnalytics[bondId];
-        analytics.lastTradePrice = listing.listingPrice;
-        analytics.historicalPrices.push(listing.listingPrice);
+
+        // Update based on fractional tokens
+        if (analytics.holderBalances[msg.sender] == 0) {
+            // If first time holding this bond type according to analytics
+            userBondCount[msg.sender]++; // Increment count of bond *types* held
+            // listing.holders logic removed previously, assuming it's gone
+        }
+
+        // Update market analytics using calculated fractional amount
+        analytics.lastTradePrice = listing.listingPrice; // This is price per WHOLE bond from listing
+        analytics.historicalPrices.push(listing.listingPrice); // Still log listing price
         analytics.tradingTimes.push(block.timestamp);
         analytics.numberOfTrades++;
-        analytics.totalTradingVolume += amount * listing.listingPrice;
-        analytics.holderBalances[msg.sender] += amount;
+        // Volume calculation uses listing price (per whole bond) * number of whole bonds
+        uint256 stablecoinVolume = listing.listingPrice * bondAmount;
+        // Overflow check for volume
+        if (bondAmount > 0) {
+            // Check bondAmount > 0
+            require(
+                stablecoinVolume / bondAmount == listing.listingPrice,
+                "Purchase: Volume calculation overflow"
+            );
+        }
+        analytics.totalTradingVolume += stablecoinVolume;
 
-        // Update global statistics
-        totalTradingVolume += amount * listing.listingPrice;
-        userTradingVolume[msg.sender] += amount * listing.listingPrice;
+        // *** IMPORTANT: Update holder balance with FRACTIONAL token amount ***
+        analytics.holderBalances[msg.sender] += fractionalTokenAmount;
 
-        // Call the function in the bond contract to purchase the bond
-        listing.bondContract.purchaseBondFor(msg.sender, amount);
+        // --- Update global statistics ---
+        totalTradingVolume += stablecoinVolume;
+        userTradingVolume[msg.sender] += stablecoinVolume;
 
-        emit BondPurchaseRecorded(bondId, msg.sender, amount);
+        // --- Call the function in the bond contract to purchase the bond ---
+        listing.bondContract.purchaseBondFor(msg.sender, bondAmount);
+
+        // --- Emit Event ---
+        // Event should likely reflect fractional tokens and stablecoin amount
+        emit BondPurchaseRecorded(bondId, msg.sender, fractionalTokenAmount);
     }
+
+    //--------------------- Coupon Functions --------------------- //
 
     /**
      * @notice Claim the coupon for a bond
@@ -219,6 +272,70 @@ contract BondMarketPlace is Ownable {
         // Forward the coupon claim using the caller's address
         listing.bondContract.claimCouponFor(msg.sender);
     }
+
+    /**
+     * @notice Claim coupon payments for multiple holders of a bond
+     * @param bondId The identifier for the bond listing
+     * @param claimers Array of addresses for which to claim coupons
+     * @return successfulClaims Array indicating which claims were successful
+     * @return totalClaimed Total amount of stablecoins claimed
+     */
+    function batchClaimCoupons(
+        uint256 bondId,
+        address[] calldata claimers
+    ) external returns (bool[] memory successfulClaims, uint256 totalClaimed) {
+        BondListing storage listing = bondListings[bondId];
+        require(listing.isListed, "Bond is not listed");
+        require(!listing.matured, "Bond has matured");
+
+        // Forward the batch claim to the bond contract
+        return listing.bondContract.batchClaimCoupons(claimers);
+    }
+
+    /**
+     * @notice Claim coupon payments for multiple holders across multiple bonds
+     * @param bondIds Array of bond identifiers
+     * @param claimers Array of addresses for which to claim coupons (same length as bondIds)
+     * @return successCounts Number of successful claims for each bond
+     * @return totalAmounts Total amount claimed for each bond
+     */
+    function multiClaimCoupons(
+        uint256[] calldata bondIds,
+        address[][] calldata claimers
+    )
+        external
+        returns (uint256[] memory successCounts, uint256[] memory totalAmounts)
+    {
+        require(bondIds.length == claimers.length, "Array lengths must match");
+
+        successCounts = new uint256[](bondIds.length);
+        totalAmounts = new uint256[](bondIds.length);
+
+        for (uint256 i = 0; i < bondIds.length; i++) {
+            BondListing storage listing = bondListings[bondIds[i]];
+
+            if (!listing.isListed || listing.matured) {
+                continue;
+            }
+
+            (bool[] memory successes, uint256 total) = listing
+                .bondContract
+                .batchClaimCoupons(claimers[i]);
+
+            // Count successful claims
+            for (uint256 j = 0; j < successes.length; j++) {
+                if (successes[j]) {
+                    successCounts[i]++;
+                }
+            }
+
+            totalAmounts[i] = total;
+        }
+
+        return (successCounts, totalAmounts);
+    }
+
+    //--------------------- Maturity and Redemption Functions --------------------- //
 
     /**
      * @notice Update the maturity status of a bond
@@ -275,6 +392,206 @@ contract BondMarketPlace is Ownable {
         listing.bondContract.redeemFor(msg.sender);
 
         emit BondRedemptionRecorded(bondId, msg.sender, preBalance);
+    }
+
+    /**
+     * @notice Redeem bonds for multiple holders of a bond
+     * @param bondId The identifier for the bond listing
+     * @param redeemers Array of addresses for which to redeem bonds
+     * @return successfulRedemptions Array indicating which redemptions were successful
+     * @return totalRedeemed Total amount of stablecoins redeemed
+     */
+    function batchRedeemBonds(
+        uint256 bondId,
+        address[] calldata redeemers
+    )
+        external
+        returns (bool[] memory successfulRedemptions, uint256 totalRedeemed)
+    {
+        BondListing storage listing = bondListings[bondId];
+        require(listing.isListed, "Bond does not exist");
+        require(listing.matured, "Bond has not matured");
+
+        // Update market analytics before redemption
+        MarketAnalytics storage analytics = bondAnalytics[bondId];
+
+        // Forward the batch redemption to the bond contract
+        (successfulRedemptions, totalRedeemed) = listing
+            .bondContract
+            .batchRedeemBonds(redeemers);
+
+        // Update analytics for each successful redemption
+        for (uint256 i = 0; i < redeemers.length; i++) {
+            if (successfulRedemptions[i]) {
+                address redeemer = redeemers[i];
+
+                // Get the pre-redemption balance from the analytics
+                uint256 currentBalance = analytics.holderBalances[redeemer];
+
+                // Update holder balances (set to 0 since all tokens are redeemed)
+                if (currentBalance > 0) {
+                    analytics.holderBalances[redeemer] = 0;
+
+                    // Update TVL
+                    if (analytics.totalValueLocked >= currentBalance) {
+                        analytics.totalValueLocked -= currentBalance;
+                    } else {
+                        analytics.totalValueLocked = 0;
+                    }
+                }
+
+                // Emit marketplace event
+                emit BondRedemptionRecorded(bondId, redeemer, currentBalance);
+            }
+        }
+
+        return (successfulRedemptions, totalRedeemed);
+    }
+
+    /**
+     * @notice Redeem bonds for multiple holders across multiple bonds
+     * @param bondIds Array of bond identifiers
+     * @param redeemers Array of arrays of addresses for which to redeem bonds
+     * @return successCounts Number of successful redemptions for each bond
+     * @return totalAmounts Total amount redeemed for each bond
+     */
+    function multiRedeemBonds(
+        uint256[] calldata bondIds,
+        address[][] calldata redeemers
+    )
+        external
+        returns (uint256[] memory successCounts, uint256[] memory totalAmounts)
+    {
+        require(bondIds.length == redeemers.length, "Array lengths must match");
+
+        successCounts = new uint256[](bondIds.length);
+        totalAmounts = new uint256[](bondIds.length);
+
+        for (uint256 i = 0; i < bondIds.length; i++) {
+            BondListing storage listing = bondListings[bondIds[i]];
+
+            if (!listing.isListed || !listing.matured) {
+                continue;
+            }
+
+            (bool[] memory successes, uint256 total) = listing
+                .bondContract
+                .batchRedeemBonds(redeemers[i]);
+
+            // Count successful redemptions
+            for (uint256 j = 0; j < successes.length; j++) {
+                if (successes[j]) {
+                    successCounts[i]++;
+
+                    // Update marketplace analytics
+                    address redeemer = redeemers[i][j];
+                    MarketAnalytics storage analytics = bondAnalytics[
+                        bondIds[i]
+                    ];
+
+                    // Get the pre-redemption balance
+                    uint256 currentBalance = analytics.holderBalances[redeemer];
+
+                    // Update holder balances
+                    if (currentBalance > 0) {
+                        analytics.holderBalances[redeemer] = 0;
+
+                        // Update TVL
+                        if (analytics.totalValueLocked >= currentBalance) {
+                            analytics.totalValueLocked -= currentBalance;
+                        } else {
+                            analytics.totalValueLocked = 0;
+                        }
+                    }
+
+                    // Emit marketplace event
+                    emit BondRedemptionRecorded(
+                        bondIds[i],
+                        redeemer,
+                        currentBalance
+                    );
+                }
+            }
+
+            totalAmounts[i] = total;
+        }
+
+        return (successCounts, totalAmounts);
+    }
+
+    //--------------------- Exchange Functions --------------------- //
+
+    /**
+     * @notice Exchange bonds between two parties
+     * @param bondId The identifier for the bond listing
+     * @param from The address of the sender
+     * @param to The address of the receiver
+     * @param tokenAmount The amount of tokens to exchange
+     * @param stablecoinAmount The amount of stablecoins to exchange
+     */
+    function exchangeBonds(
+        uint256 bondId,
+        address from,
+        address to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    ) external {
+        // Verify listing exists and isn't matured
+        BondListing storage listing = bondListings[bondId];
+        require(listing.isListed, "Bond is not listed");
+        require(!listing.matured, "Bond has matured");
+
+        // --- Update Market Analytics ---
+        MarketAnalytics storage analytics = bondAnalytics[bondId];
+
+        // For paid exchanges, update price tracking
+        if (stablecoinAmount > 0 && tokenAmount > 0) {
+            // Added tokenAmount > 0 check for price calc
+            uint256 pricePerToken = stablecoinAmount / tokenAmount; // Price per fractional token
+            analytics.lastTradePrice = pricePerToken;
+            analytics.historicalPrices.push(pricePerToken);
+
+            // Update volume statistics
+            analytics.totalTradingVolume += stablecoinAmount; // Volume in stablecoin value
+            totalTradingVolume += stablecoinAmount;
+            // Associate volume with both parties in a trade
+            userTradingVolume[from] += stablecoinAmount;
+            userTradingVolume[to] += stablecoinAmount;
+        }
+
+        // Update common analytics
+        analytics.tradingTimes.push(block.timestamp);
+        analytics.numberOfTrades++;
+
+        // --- Update Holder Balances (Marketplace View) ---
+        // Check for underflow before subtracting
+        require(
+            analytics.holderBalances[from] >= tokenAmount,
+            "Analytics: Insufficient sender balance"
+        );
+        analytics.holderBalances[from] -= tokenAmount;
+        analytics.holderBalances[to] += tokenAmount;
+
+        // --- REMOVED listing.holders and userBondCount logic ---
+
+        // --- Execute the exchange through the bond contract ---
+        // IMPORTANT: This call performs the actual token movements.
+        // Requires BOTH:
+        // 1. 'from' to have approved 'listing.bondContract' for 'tokenAmount' bond tokens.
+        // 2. If stablecoinAmount > 0, 'to' to have approved 'listing.bondContract' for 'stablecoinAmount' stablecoins.
+        listing.bondContract.exchangeBonds(
+            from,
+            to,
+            tokenAmount, // Fractional bond tokens
+            stablecoinAmount
+        );
+
+        // --- Emit appropriate marketplace events ---
+        if (stablecoinAmount > 0) {
+            emit BondExchanged(bondId, from, to, tokenAmount, stablecoinAmount);
+        } else {
+            emit BondGifted(bondId, from, to, tokenAmount);
+        }
     }
 
     /**
@@ -495,5 +812,103 @@ contract BondMarketPlace is Ownable {
         }
 
         return activePositions;
+    }
+    // Add this function to your BondMarketPlace contract
+
+    /**
+     * @notice Get actual bond holdings for a user, including bond addresses, by querying contracts.
+     * @dev Returns parallel arrays of bond IDs, their contract addresses, and token balances.
+     * @dev This provides the most accurate balance, accounting for external transfers.
+     * @dev May be more gas-intensive than getUserHoldings due to external calls.
+     * @dev Relies on iterating through potentially listed bond IDs - efficiency depends on ID density.
+     * @param user The address of the user whose holdings to query.
+     * @return bondIds An array of bond IDs the user holds based on contract balances.
+     * @return bondAddresses An array of corresponding ITokenizedBond contract addresses.
+     * @return balances An array of corresponding token balances for each bond ID.
+     */
+    function getActualUserHoldingsWithDetails(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256[] memory bondIds,
+            address[] memory bondAddresses,
+            uint256[] memory balances
+        )
+    {
+        // --- First Pass: Count actual holdings by querying contracts ---
+        uint256 activeCount = 0;
+        uint256 loopLimit = totalListedBonds + 100; // arbitrary buffer, cannot exceed 1024
+
+        for (uint256 bondId = 1; bondId <= loopLimit; bondId++) {
+            BondListing storage listing = bondListings[bondId];
+            // Check if listing exists (isListed flag) and contract address is valid
+            if (
+                listing.isListed && address(listing.bondContract) != address(0)
+            ) {
+                // Use try-catch for the external call to handle potential reverts
+                try listing.bondContract.balanceOf(user) returns (
+                    uint256 balance
+                ) {
+                    if (balance > 0) {
+                        activeCount++;
+                    }
+                } catch {
+                    continue;
+                }
+            }
+        }
+
+        // --- Second Pass: Populate arrays ---
+        bondIds = new uint256[](activeCount);
+        bondAddresses = new address[](activeCount); // Initialize the new addresses array
+        balances = new uint256[](activeCount);
+        uint256 currentIndex = 0;
+
+        for (uint256 bondId = 1; bondId <= loopLimit; bondId++) {
+            BondListing storage listing = bondListings[bondId];
+            // Check again if listing exists and contract is valid
+            if (
+                listing.isListed && address(listing.bondContract) != address(0)
+            ) {
+                try listing.bondContract.balanceOf(user) returns (
+                    uint256 balance
+                ) {
+                    if (balance > 0) {
+                        bondIds[currentIndex] = bondId;
+                        // Store the bond contract address
+                        bondAddresses[currentIndex] = address(
+                            listing.bondContract
+                        );
+                        balances[currentIndex] = balance;
+                        currentIndex++;
+                        // Optimization: Stop if we've found all expected active positions
+                        if (currentIndex == activeCount) {
+                            break;
+                        }
+                    }
+                } catch {
+                    // Ignore errors and continue
+                    continue;
+                }
+            }
+        }
+
+        return (bondIds, bondAddresses, balances);
+    }
+
+    /**
+     * @notice Get the marketplace's tracked balance for a specific holder of a specific bond.
+     * @param bondId The identifier for the bond listing.
+     * @param holder The address of the holder to query.
+     * @return The balance according to marketplace analytics.
+     */
+    function getAnalyticsHolderBalance(
+        uint256 bondId,
+        address holder
+    ) external view returns (uint256) {
+        // Access the nested mapping directly within the contract
+        return bondAnalytics[bondId].holderBalances[holder];
     }
 }

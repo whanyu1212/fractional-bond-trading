@@ -35,7 +35,7 @@ contract TokenizedBond is ERC20, Ownable {
         string symbol; // Symbol of the bond
         uint256 bondId; // Unique identifier or name for the bond
         address issuer; // Bond issuer's address
-        uint256 maxBondSupply; // Maximum number of bonds that can be issued
+        uint256 maxBondSupply; // Maximum number of whole bonds that can be minted and issued conceptually
         uint256 maturityDate; // UNIX timestamp for maturity, after which bond can be redeemed
         uint256 faceValue; // Total principal amount of the bond
         uint256 couponRate; // Annual coupon rate (e.g., in basis points)
@@ -52,6 +52,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 tokensPerBond; // Total ERC20 tokens representing one bond
         uint256 tokenPrice; // Price of one token in stablecoin
         uint256 totalRaised; // Total amount raised from bond sales
+        uint256 maxOfferingSize; // Maximum amount of stablecoin to raise
     }
 
     BondInfo public bondInfo;
@@ -86,18 +87,25 @@ contract TokenizedBond is ERC20, Ownable {
     event CouponPaid(address indexed claimer, uint256 couponAmount);
     event BondRedeemed(address indexed redeemer, uint256 redemptionAmount);
 
+    //-------------------- Unused events --------------------//
     event DocumentURIUpdated(string documentURI);
     event DocumentHashUpdated(bytes32 documentHash);
 
     event AddedToWhitelist(address indexed account);
     event RemovedFromWhitelist(address indexed account);
     event KycStatusChanged(address indexed account, bool approved);
+    //-------------------------------------------------------//
 
-    event BondSwapped(
+    event BondTraded(
         address indexed from,
         address indexed to,
         uint256 tokenAmount,
         uint256 stablecoinAmount
+    );
+    event BondGifted(
+        address indexed from,
+        address indexed to,
+        uint256 tokenAmount
     );
 
     constructor(
@@ -113,7 +121,7 @@ contract TokenizedBond is ERC20, Ownable {
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
         uint256 _maxBondSupply,
-        uint256 _initialSupply
+        uint256 _maxOfferingSize
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         bondInfo = BondInfo({
             name: _name,
@@ -134,13 +142,14 @@ contract TokenizedBond is ERC20, Ownable {
         fractionInfo = FractionalizationInfo({
             tokensPerBond: _tokensPerBond,
             tokenPrice: _tokenPrice,
-            totalRaised: 0
+            totalRaised: 0,
+            maxOfferingSize: _maxOfferingSize // Max stablecoin value to raise
         });
 
         stablecoin = IERC20(_stablecoinAddress);
-
-        _mint(_issuer, _initialSupply);
     }
+
+    //-------------------- View/Getter functions --------------------//
 
     /**
      * @notice Get the bond price in stablecoin
@@ -174,24 +183,27 @@ contract TokenizedBond is ERC20, Ownable {
         return address(stablecoin);
     }
 
+    function getTokensPerBond() external view returns (uint256) {
+        return fractionInfo.tokensPerBond;
+    }
+
+    //-------------------- Owner functions --------------------//
+
     /**
      * @notice Modify a subset of bond parameters (only callable by owner/issuer), must be bigger than 0
      * @param _couponRate New coupon rate in basis points
      * @param _maturityDate New maturity date
      * @param _maxBondSupply New maximum bond supply
      * @param _tokenPrice New bond price
+     * @param _maxOfferingSize New maximum offering size
      */
     function modifyBond(
         uint256 _couponRate,
         uint256 _maturityDate,
         uint256 _maxBondSupply,
-        uint256 _tokenPrice
+        uint256 _tokenPrice,
+        uint256 _maxOfferingSize
     ) external onlyOwner {
-        require(
-            bondInfo.totalBondsMinted == 0, // logically, we should not be able to modify after bonds are minted
-            "Cannot modify after bonds are minted"
-        );
-
         if (_couponRate > 0) {
             bondInfo.couponRate = _couponRate;
         }
@@ -212,6 +224,10 @@ contract TokenizedBond is ERC20, Ownable {
             fractionInfo.tokenPrice = _tokenPrice;
         }
 
+        if (_maxOfferingSize > 0) {
+            fractionInfo.maxOfferingSize = _maxOfferingSize;
+        }
+
         emit BondModified(
             bondInfo.couponRate,
             bondInfo.maturityDate,
@@ -221,45 +237,365 @@ contract TokenizedBond is ERC20, Ownable {
     }
 
     /**
-     * @notice Mint new bonds to the specified address (in this case, we need to supply to the market)
-     * @param to The address to which the new bonds will be minted
-     * @param bondAmount The number of bonds to mint
+     * @notice Mint new bond tokens corresponding to a number of whole bonds. Only owner.
+     * @dev Typically used by the issuer to create the initial supply or add more supply if needed,up to the maxBondSupply.
+     * @param to The address to which the new bond tokens will be minted.
+     * @param bondAmount The number of *whole bonds* worth of tokens to mint.
      */
     function mintBond(address to, uint256 bondAmount) external onlyOwner {
-        require(to != address(0), "Invalid recipient address");
-        require(bondAmount > 0, "Amount must be greater than 0");
+        require(to != address(0), "Mint to the zero address");
+        require(bondAmount > 0, "Mint amount must be > 0");
         require(
             bondInfo.totalBondsMinted + bondAmount <= bondInfo.maxBondSupply,
-            "Exceeds maximum bond supply"
+            "Exceeds maximum bond supply (number)" // Check against the count of whole bonds
         );
         require(block.timestamp < bondInfo.maturityDate, "Bond has matured");
 
-        // Calculate total future coupon payments
-        uint256 remainingCoupons = ((bondInfo.maturityDate - block.timestamp) *
-            bondInfo.couponFrequency) / 365 days;
-        uint256 totalCouponPayments = (bondAmount *
-            bondInfo.faceValue *
-            bondInfo.couponRate *
-            remainingCoupons) / (10000 * bondInfo.couponFrequency);
-
-        // Ensure contract has enough stablecoin for coupon payments and principal
-        require(
-            stablecoin.balanceOf(address(this)) >=
-                totalCouponPayments + (bondAmount * bondInfo.faceValue),
-            "Insufficient stablecoin reserve for future payments"
-        );
-
+        // Calculate the number of fractional tokens to mint
         uint256 tokenAmount = bondAmount * fractionInfo.tokensPerBond;
-        _mint(to, tokenAmount);
+        // Ensure no overflow in token amount calculation
+        if (bondAmount > 0) {
+            require(
+                tokenAmount / bondAmount == fractionInfo.tokensPerBond,
+                "Mint: Token amount calculation overflow"
+            );
+        }
+
+        // Update the count of total whole bonds conceptually minted
         bondInfo.totalBondsMinted += bondAmount;
 
-        // Initialize the last claimed coupon timestamp for the new holder
+        // Mint the corresponding fractional tokens to the recipient
+        _mint(to, tokenAmount);
+
+        // Initialize the last claimed coupon timestamp for the new holder if they are receiving tokens for the first time.
+        // This prevents them from claiming coupons for periods before they held the tokens.
+        if (lastClaimedCoupon[to] == 0) {
+            // Set to current time; they become eligible to claim in the *next* full period.
+            lastClaimedCoupon[to] = block.timestamp;
+        }
+
+        // Emit an event logging the minting action
+        emit BondMinted(to, bondAmount, tokenAmount);
+    }
+
+    //-------------------- Purchase functions --------------------//
+    /**
+     * @notice Purchase whole bonds for a specified buyer by transferring stablecoin.
+     * @dev Mints new fractional tokens to the buyer based on the number of whole bonds purchased.
+     *      Requires prior stablecoin approval from the buyer to this contract.
+     *      Checks against the maximum offering size (total stablecoin value to raise).
+     * @param buyer The address that will receive the bond tokens and pay for them.
+     * @param bondAmount The number of *whole* bonds to purchase.
+     */
+    function purchaseBondFor(address buyer, uint256 bondAmount) external {
+        require(
+            buyer != address(0),
+            "Bond: Purchase cannot be for zero address"
+        );
+        require(bondAmount > 0, "Bond: Cannot purchase zero bonds");
+        require(
+            fractionInfo.tokenPrice > 0, // Price per fractional token
+            "Bond: Token price must be set to purchase"
+        );
+        require(
+            fractionInfo.tokensPerBond > 0, // Need this for calculation
+            "Bond: Tokens per bond must be set"
+        );
+        require(
+            block.timestamp < bondInfo.maturityDate,
+            "Bond: Sale period ended (matured)"
+        );
+
+        // --- Calculate Fractional Token Amount ---
+        uint256 fractionalTokenAmount = bondAmount * fractionInfo.tokensPerBond;
+        // Check for overflow in fractional token calculation
+        if (bondAmount > 0) {
+            // Already checked bondAmount > 0, but good practice
+            require(
+                fractionalTokenAmount / bondAmount ==
+                    fractionInfo.tokensPerBond,
+                "Bond: Fractional token amount overflow"
+            );
+        }
+        // Ensure fractional amount is also > 0 (implied by bondAmount > 0 and tokensPerBond > 0)
+
+        // --- Calculate Total Stablecoin Cost ---
+        // Cost = (Fractional Tokens) * (Price per Fractional Token)
+        uint256 totalPrice = fractionalTokenAmount * fractionInfo.tokenPrice;
+        // Check for overflow in price calculation
+        if (fractionalTokenAmount > 0) {
+            // fractionalTokenAmount is > 0 if inputs are valid
+            require(
+                totalPrice / fractionalTokenAmount == fractionInfo.tokenPrice,
+                "Bond: Price calculation overflow"
+            );
+        }
+        // No need to check totalPrice > 0 as inputs guarantee it
+
+        // --- Check Offering Size Limit ---
+        // Ensure the total value raised does not exceed the maximum defined for this offering.
+        require(
+            fractionInfo.totalRaised + totalPrice <=
+                fractionInfo.maxOfferingSize,
+            "Bond: Purchase exceeds maximum offering size"
+        );
+
+        // --- Check Max Supply Limit ---
+        // Calculate max total tokens possible based on max *number* of bonds
+        uint256 maxTotalTokens = bondInfo.maxBondSupply *
+            fractionInfo.tokensPerBond;
+        // Prevent overflow in maxTotalTokens calculation (redundant if constructor checks inputs)
+        if (bondInfo.maxBondSupply > 0) {
+            require(
+                maxTotalTokens / bondInfo.maxBondSupply ==
+                    fractionInfo.tokensPerBond,
+                "Bond: Max token calculation overflow"
+            );
+        }
+        // Ensure minting this amount doesn't exceed the theoretical max token count
+        // Checks current ERC20 totalSupply() + the amount we *will* mint
+        require(
+            totalSupply() + fractionalTokenAmount <= maxTotalTokens,
+            "Bond: Purchase exceeds max possible token supply"
+        );
+
+        stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
+
+        _mint(buyer, fractionalTokenAmount);
+
+        fractionInfo.totalRaised += totalPrice;
+
+        // Initialize the last claimed coupon timestamp for the new holder if they are new
+        if (lastClaimedCoupon[buyer] == 0) {
+            // Set to current time, they can claim next period if eligible
+            lastClaimedCoupon[buyer] = block.timestamp;
+        }
+
+        // --- Emit Event ---
+        emit BondPurchased(buyer, fractionalTokenAmount); // Emitting fractional amount makes sense here
+    }
+
+    //-------------------- Claim functions --------------------//
+
+    /**
+     * @notice Claim coupon payments on behalf of a given address.
+     * @param claimer The address for which to claim coupon payments.
+     */
+    function claimCouponFor(address claimer) external {
+        // require(whitelist[claimer], "Claimer not whitelisted");
+        // require(kycApproved[claimer], "Claimer not KYC approved");
+        require(balanceOf(claimer) > 0, "No bonds held");
+        require(
+            block.timestamp >=
+                lastClaimedCoupon[claimer] +
+                    (365 days / bondInfo.couponFrequency),
+            "Too early"
+        );
+
+        uint256 couponAmount = (balanceOf(claimer) *
+            bondInfo.faceValue *
+            bondInfo.couponRate) /
+            (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
+        lastClaimedCoupon[claimer] = block.timestamp;
+        stablecoin.safeTransfer(claimer, couponAmount);
+        emit CouponPaid(claimer, couponAmount);
+    }
+
+    /**
+     * @notice Claim coupon payments on behalf of multiple addresses in a single transaction
+     * @param claimers Array of addresses for which to claim coupon payments
+     * @return successfulClaims Array of booleans indicating which claims were successful
+     * @return totalClaimed Total amount of coupons claimed across all successful claims
+     */
+    function batchClaimCoupons(
+        address[] calldata claimers
+    ) external returns (bool[] memory successfulClaims, uint256 totalClaimed) {
+        require(claimers.length > 0, "Empty claimers array");
+
+        successfulClaims = new bool[](claimers.length);
+        totalClaimed = 0;
+
+        for (uint256 i = 0; i < claimers.length; i++) {
+            address claimer = claimers[i];
+
+            // Check basic requirements
+            if (balanceOf(claimer) == 0) {
+                successfulClaims[i] = false;
+                continue;
+            }
+
+            // Check if enough time has passed since last claim
+            if (
+                block.timestamp <
+                lastClaimedCoupon[claimer] +
+                    (365 days / bondInfo.couponFrequency)
+            ) {
+                successfulClaims[i] = false;
+                continue;
+            }
+
+            // Calculate coupon amount
+            uint256 couponAmount = (balanceOf(claimer) *
+                bondInfo.faceValue *
+                bondInfo.couponRate) /
+                (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
+
+            // Update state
+            lastClaimedCoupon[claimer] = block.timestamp;
+
+            // Transfer coupon
+            stablecoin.safeTransfer(claimer, couponAmount);
+
+            // Record success and update total
+            successfulClaims[i] = true;
+            totalClaimed += couponAmount;
+
+            // Emit event for each successful claim
+            emit CouponPaid(claimer, couponAmount);
+        }
+
+        return (successfulClaims, totalClaimed);
+    }
+
+    //-------------------- Redemption functions --------------------//
+
+    /**
+     * @notice Redeem the bond after maturity to a specified address so this function can be called by anyone
+     * @param redeemer The address to which the redemption amount will be transferred
+     */
+    function redeemFor(address redeemer) external {
+        // require(whitelist[redeemer], "Redeemer not whitelisted");
+        // require(kycApproved[redeemer], "Redeemer not KYC approved");
+        require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
+        uint256 bondTokens = balanceOf(redeemer);
+        require(bondTokens > 0, "No bonds to redeem");
+
+        uint256 redemptionAmount = (bondTokens * bondInfo.faceValue) /
+            fractionInfo.tokensPerBond;
+        _burn(redeemer, bondTokens);
+        stablecoin.safeTransfer(redeemer, redemptionAmount);
+        emit BondRedeemed(redeemer, redemptionAmount);
+    }
+
+    /**
+     * @notice Redeem bonds after maturity for multiple addresses in a single transaction
+     * @param redeemers Array of addresses for which to redeem bonds
+     * @return successfulRedemptions Array of booleans indicating which redemptions were successful
+     * @return totalRedeemed Total amount of stablecoins redeemed across all successful redemptions
+     */
+    function batchRedeemBonds(
+        address[] calldata redeemers
+    )
+        external
+        returns (bool[] memory successfulRedemptions, uint256 totalRedeemed)
+    {
+        require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
+        require(redeemers.length > 0, "Empty redeemers array");
+
+        successfulRedemptions = new bool[](redeemers.length);
+        totalRedeemed = 0;
+
+        for (uint256 i = 0; i < redeemers.length; i++) {
+            address redeemer = redeemers[i];
+
+            // Check if the redeemer has any bonds
+            uint256 bondTokens = balanceOf(redeemer);
+            if (bondTokens == 0) {
+                successfulRedemptions[i] = false;
+                continue;
+            }
+
+            // Calculate redemption amount
+            uint256 redemptionAmount = (bondTokens * bondInfo.faceValue) /
+                fractionInfo.tokensPerBond;
+
+            // Burn tokens and transfer stablecoins
+            _burn(redeemer, bondTokens);
+            stablecoin.safeTransfer(redeemer, redemptionAmount);
+
+            // Record success and update total
+            successfulRedemptions[i] = true;
+            totalRedeemed += redemptionAmount;
+
+            // Emit event for each successful redemption
+            emit BondRedeemed(redeemer, redemptionAmount);
+        }
+
+        return (successfulRedemptions, totalRedeemed);
+    }
+
+    //-------------------- Exchange functions --------------------//
+
+    /**
+     * @notice Swap bonds between two approved holders (both parties must agree)
+     * @param from Address sending the bonds
+     * @param to Address receiving the bonds
+     * @param tokenAmount Amount of bond tokens to swap
+     * @param stablecoinAmount Amount of stablecoins to pay
+     * @dev Setting stablecoinAmount to 0 allows gifting bonds without payment
+     */
+    function exchangeBonds(
+        address from,
+        address to,
+        uint256 tokenAmount,
+        uint256 stablecoinAmount
+    ) external {
+        // Verify that caller is one of the participants
+        // require(
+        //     msg.sender == from || msg.sender == to,
+        //     "Not authorized for swap"
+        // );
+
+        // Check if both parties are whitelisted and KYC approved
+        // require(
+        //     whitelist[from] && whitelist[to],
+        //     "Both parties must be whitelisted"
+        // );
+        // require(
+        //     kycApproved[from] && kycApproved[to],
+        //     "Both parties must be KYC approved"
+        // );
+
+        // Check if the bond has matured
+        require(
+            block.timestamp < bondInfo.maturityDate,
+            "Bond has matured, swapping disabled"
+        );
+
+        // Verify balances
+        require(balanceOf(from) >= tokenAmount, "Insufficient bond tokens");
+        // Only check stablecoin balance if payment is required (not a gift)
+        if (stablecoinAmount > 0) {
+            require(
+                stablecoin.balanceOf(to) >= stablecoinAmount,
+                "Insufficient stablecoins"
+            );
+        }
+
+        // Perform the swap - transfer bonds from 'from' to 'to'
+        _transfer(from, to, tokenAmount);
+
+        // Transfer stablecoins if applicable (not a gift)
+        if (stablecoinAmount > 0) {
+            stablecoin.safeTransferFrom(to, from, stablecoinAmount);
+        }
+
+        // Update last claimed coupon if needed
         if (lastClaimedCoupon[to] == 0) {
             lastClaimedCoupon[to] = block.timestamp;
         }
 
-        emit BondMinted(to, bondAmount, tokenAmount);
+        // Emit a bond traded event if stablecoinAmount is greater than 0
+        // Otherwise, emit a bond gifted event
+        // This allows for both trading and gifting of bonds
+        if (stablecoinAmount > 0) {
+            emit BondTraded(from, to, tokenAmount, stablecoinAmount);
+        } else {
+            emit BondGifted(from, to, tokenAmount);
+        }
     }
+
+    //-------------------- Unused functions --------------------//
 
     /**
      * @notice Set the document URI for legal documentation
@@ -328,160 +664,5 @@ contract TokenizedBond is ERC20, Ownable {
             kycApproved[accounts[i]] = approved;
             emit KycStatusChanged(accounts[i], approved);
         }
-    }
-
-    /**
-     * @notice Check if a transfer is allowed
-     * @param from Sender address
-     * @param to Recipient address
-     * @return Whether the transfer is allowed
-     */
-    function canTransfer(address from, address to) public view returns (bool) {
-        // Allow transfers to the contract itself for redemption after maturity
-        if (block.timestamp >= bondInfo.maturityDate) {
-            // After maturity, only allow transfers to the contract itself (for redemption)
-            return
-                to == address(this) &&
-                whitelist[from] &&
-                whitelist[to] &&
-                kycApproved[from] &&
-                kycApproved[to];
-        }
-
-        // Before maturity, check regular transfer conditions
-        return
-            whitelist[from] &&
-            whitelist[to] &&
-            kycApproved[from] &&
-            kycApproved[to];
-    }
-
-    /**
-     * @notice Purchase of bonds in terms of tokens
-     * @param buyer The address of the buyer
-     * @param tokenAmount The amount of tokens to purchase
-     */
-    function purchaseBondFor(address buyer, uint256 tokenAmount) external {
-        // require(whitelist[buyer], "Buyer not whitelisted");
-        // require(kycApproved[buyer], "Buyer not KYC approved");
-        require(
-            block.timestamp < bondInfo.maturityDate,
-            "Bond no longer for sale"
-        );
-
-        // Calculate price based on token amount rather than bond amount
-        uint256 totalPrice = (tokenAmount * fractionInfo.tokenPrice) /
-            fractionInfo.tokensPerBond;
-
-        require(
-            fractionInfo.totalRaised + totalPrice <= bondInfo.maxBondSupply,
-            "Exceeds maximum tokens"
-        );
-
-        // Pull stablecoin from the buyer's account
-        stablecoin.safeTransferFrom(buyer, address(this), totalPrice);
-        _mint(buyer, tokenAmount);
-        fractionInfo.totalRaised += totalPrice;
-        emit BondPurchased(buyer, tokenAmount);
-    }
-
-    /**
-     * @notice Claim coupon payments on behalf of a given address.
-     * @param claimer The address for which to claim coupon payments.
-     */
-    function claimCouponFor(address claimer) external {
-        // require(whitelist[claimer], "Claimer not whitelisted");
-        // require(kycApproved[claimer], "Claimer not KYC approved");
-        require(balanceOf(claimer) > 0, "No bonds held");
-        require(
-            block.timestamp >=
-                lastClaimedCoupon[claimer] +
-                    (365 days / bondInfo.couponFrequency),
-            "Too early"
-        );
-
-        uint256 couponAmount = (balanceOf(claimer) *
-            bondInfo.faceValue *
-            bondInfo.couponRate) /
-            (fractionInfo.tokensPerBond * 10000 * bondInfo.couponFrequency);
-        lastClaimedCoupon[claimer] = block.timestamp;
-        stablecoin.safeTransfer(claimer, couponAmount);
-        emit CouponPaid(claimer, couponAmount);
-    }
-
-    /**
-     * @notice Redeem the bond after maturity to a specified address so this function can be called by anyone
-     * @param redeemer The address to which the redemption amount will be transferred
-     */
-    function redeemFor(address redeemer) external {
-        // require(whitelist[redeemer], "Redeemer not whitelisted");
-        // require(kycApproved[redeemer], "Redeemer not KYC approved");
-        require(block.timestamp >= bondInfo.maturityDate, "Bond not matured");
-        uint256 bondTokens = balanceOf(redeemer);
-        require(bondTokens > 0, "No bonds to redeem");
-
-        uint256 redemptionAmount = (bondTokens * bondInfo.faceValue) /
-            fractionInfo.tokensPerBond;
-        _burn(redeemer, bondTokens);
-        stablecoin.safeTransfer(redeemer, redemptionAmount);
-        emit BondRedeemed(redeemer, redemptionAmount);
-    }
-
-    /**
-     * @notice Swap bonds between two approved holders (both parties must agree)
-     * @param from Address sending the bonds
-     * @param to Address receiving the bonds
-     * @param tokenAmount Amount of bond tokens to swap
-     * @param stablecoinAmount Amount of stablecoins to pay
-     * @dev Requires approval from both parties - either can initiate
-     */
-    function swapBonds(
-        address from,
-        address to,
-        uint256 tokenAmount,
-        uint256 stablecoinAmount
-    ) external {
-        // Verify that caller is one of the participants
-        // require(
-        //     msg.sender == from || msg.sender == to,
-        //     "Not authorized for swap"
-        // );
-
-        // Check if both parties are whitelisted and KYC approved
-        // require(
-        //     whitelist[from] && whitelist[to],
-        //     "Both parties must be whitelisted"
-        // );
-        // require(
-        //     kycApproved[from] && kycApproved[to],
-        //     "Both parties must be KYC approved"
-        // );
-
-        // Check if the bond has matured
-        require(
-            block.timestamp < bondInfo.maturityDate,
-            "Bond has matured, swapping disabled"
-        );
-
-        // Verify balances
-        require(balanceOf(from) >= tokenAmount, "Insufficient bond tokens");
-        require(
-            stablecoin.balanceOf(to) >= stablecoinAmount,
-            "Insufficient stablecoins"
-        );
-
-        // Perform the swap - transfer bonds from 'from' to 'to'
-        _transfer(from, to, tokenAmount);
-
-        // Transfer stablecoins from 'to' to 'from' as payment
-        stablecoin.safeTransferFrom(to, from, stablecoinAmount);
-
-        // Update last claimed coupon if needed
-        if (lastClaimedCoupon[to] == 0) {
-            lastClaimedCoupon[to] = block.timestamp;
-        }
-
-        // Emit an event for the swap
-        emit BondSwapped(from, to, tokenAmount, stablecoinAmount);
     }
 }

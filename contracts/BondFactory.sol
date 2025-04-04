@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 // Import the TokenizedBond contract
 import "./TokenizedBond.sol";
+// Import Chainlink and OpenZeppelin libraries
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 import "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
@@ -10,74 +11,91 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title BondFactory
- * @notice A contract that handles the creation of instances of tokenized bond by calling methods in TokenizedBond.sol
+ * @notice A contract that handles bond creation/issuance, bond registry management, bond configuration and lifecycle management and some administrative operations
  */
 contract BondFactory is ChainlinkClient, ConfirmedOwner {
     using Strings for uint256;
     using Chainlink for Chainlink.Request;
+
+    //-------------------- State Variables & Structs --------------------//
+
+    // --- Chainlink Oracle State ---
     bytes32 private jobId;
     uint256 private fee;
-    address private oracle;
-    event RequestPrice(bytes32 indexed requestId, uint256 price);
-    uint256 public latestFetchedPrice;
+    address private oracle; // Chainlink Oracle address
+    uint256 public latestFetchedPrice; // Last price fetched via Chainlink
 
-    //------------------------------- State Variables ----------------------------------------//
-
-    // metadata for each bond
-    // some duplication with TokenizedBond.sol, can fix later
-    struct BondRecord {
-        address bondAddress;
-        string name;
-        string symbol;
-        bool active;
-        uint256 creationTimestamp;
-        uint256 maturityDate;
-        uint256 decommissionTimestamp;
-        address issuer;
-        uint256 faceValue;
-        uint256 couponRate;
-        uint256 maxBondSupply;
-    }
-
-    //Stre the market price via Chainlink
-    mapping(uint256 => uint256) public bondIdToPrice;
-    // Map requestId to bondId
+    // Stores the market price fetched via Chainlink
+    mapping(uint256 => uint256) public bondIdToPrice; // Renamed for clarity to represent fetched price
+    // Map Chainlink requestId to bondId
     mapping(bytes32 => uint256) public requestIdToBondId;
 
-    // Array of all bond addresses ever created
+    // --- Registry State ---
+
+    // Minimal metadata stored in the factory for registry purposes.
+    struct BondRecord {
+        address bondAddress; // Address of the deployed TokenizedBond contract
+        uint256 bondId; // The unique ID provided during creation
+        address issuer; // Address designated as the issuer
+        bool active; // Managed by the factory (true on creation, false on decommission)
+        uint256 creationTimestamp; // Timestamp of creation in the factory
+        uint256 decommissionTimestamp; // Timestamp of decommissioning in the factory
+        // NOTE: name, symbol, maturity, faceValue, couponRate, etc., are NOT stored here anymore.
+    }
+
+    // --- Return Struct for Detailed Views ---
+    struct BondDetails {
+        // From Factory Record
+        uint256 bondId;
+        address issuer;
+        uint256 creationTimestamp;
+        bool isActive;
+        uint256 decommissionTimestamp;
+        // From TokenizedBond Contract
+        string name;
+        string symbol;
+        uint256 faceValue;
+        uint256 couponRate;
+        uint256 couponFrequency;
+        uint256 maturityDate;
+        address stablecoinAddress;
+        uint256 tokensPerBond;
+        uint256 tokenPrice;
+        uint256 maxBondSupply;
+        uint256 maxOfferingSize;
+        uint256 totalRaised;
+        address bondAddress; // Added for convenience
+    }
+
+    // Array of all bond addresses ever created by this factory
     address[] public allBonds;
 
-    // Array of active bond addresses
+    // Array of currently active bond addresses managed by this factory
     address[] public activeBonds;
 
-    // Mapping from bond address the struct that contains its info
+    // Mapping from bond address to its minimal record in the factory registry
     mapping(address => BondRecord) public bondRegistry;
 
-    // Mapping from issuer address to their bonds
-    // mapping(address => address[]) public issuerToBonds;
+    // Mapping from issuer address to the unique IDs of bonds they issued via this factory
     mapping(address => uint256[]) public issuerToBondIds;
 
+    // Mapping from unique bond ID to the deployed bond contract address
     mapping(uint256 => address) public bondIdToAddress;
 
     //------------------------------- Events ----------------------------------------//
-
-    // Emit a event that says a new bond has been tokenized
+    // (Events remain the same)
     event TokenizedBondCreated(
         address indexed bondAddress,
         string name,
         string symbol,
         address indexed issuer
     );
-
-    // Emit a event that says a bond has been decommissioned
     event BondDecommissioned(
         address indexed bondAddress,
         string name,
         string symbol,
         uint256 timestamp
     );
-
-    // Emit a event that says a bond has been modified
     event BondModified(
         address indexed bondAddress,
         uint256 couponRate,
@@ -85,14 +103,10 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         uint256 maxBondSupply,
         uint256 tokenPrice
     );
+    event RequestPrice(bytes32 indexed requestId, uint256 price);
 
-    /**
-     * @notice Initialize the link token and target oracle
-     * Sepolia Testnet details:
-     * Link Token: 0x779877A7B0D9E8603169DdbD7836e478b4624789
-     * Oracle: 0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD (Chainlink DevRel)
-     * Job ID: ca98366cc7314957b8c012c72f05aeeb
-     */
+    //------------------------------- Constructor ----------------------------------------//
+
     constructor() ConfirmedOwner(msg.sender) {
         _setChainlinkToken(0x779877A7B0D9E8603169DdbD7836e478b4624789);
         _setChainlinkOracle(0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD);
@@ -100,25 +114,7 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         fee = (1 * LINK_DIVISIBILITY) / 10; // 0.1 LINK
     }
 
-    //------------------------------- Functions ----------------------------------------//
-
-    /**
-     *@notice Create a new TokenizedBond contract
-     * @dev Create a new TokenizedBond contract
-     * @param _name The name of the bond
-     * @param _symbol The symbol of the bond
-     * @param _id The unique identifier of the bond
-     * @param _faceValue The face value of the bond
-     * @param _couponRate The coupon rate of the bond
-     * @param _couponFrequency The coupon frequency of the bond
-     * @param _maturityDate The maturity date of the bond
-     * @param _issuer The issuer of the bond
-     * @param _stablecoinAddress The address of the stablecoin used to purchase the bond
-     * @param _tokensPerBond The number of tokens per bond
-     * @param _tokenPrice The token price or the unit price of the bond
-     * @param _maxBondSupply The maximum supply of the bond
-     * @return The address of the new TokenizedBond contract
-     */
+    //-------------------------- Core Factory Operations ---------------------------//
     function createTokenizedBond(
         string memory _name,
         string memory _symbol,
@@ -131,14 +127,17 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         address _stablecoinAddress,
         uint256 _tokensPerBond,
         uint256 _tokenPrice,
-        uint256 _maxBondSupply
+        uint256 _maxBondSupply,
+        uint256 _maxOfferingSize
     ) public returns (address) {
-        /**
-            Create a new TokenizedBond contract by 
-            calling the constructor in TokenizedBond.sol
-         */
+        // --- Pre-checks ---
+        require(_issuer != address(0), "Factory: Invalid issuer address");
+        require(
+            bondIdToAddress[_id] == address(0),
+            "Factory: Bond ID already exists"
+        );
 
-        uint256 initialSupply = _tokensPerBond * _maxBondSupply;
+        // --- Deploy TokenizedBond Contract ---
         TokenizedBond newBond = new TokenizedBond(
             _name,
             _symbol,
@@ -152,202 +151,94 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
             _tokensPerBond,
             _tokenPrice,
             _maxBondSupply,
-            initialSupply
+            _maxOfferingSize
         );
 
         address bondAddress = address(newBond);
 
+        // --- Create Minimal Registry Record ---
         BondRecord memory record = BondRecord({
             bondAddress: bondAddress,
-            name: _name,
-            symbol: _symbol,
+            bondId: _id,
+            issuer: _issuer,
             active: true,
             creationTimestamp: block.timestamp,
-            maturityDate: _maturityDate,
-            decommissionTimestamp: 0,
-            issuer: _issuer,
-            faceValue: _faceValue,
-            couponRate: _couponRate,
-            maxBondSupply: _maxBondSupply
+            decommissionTimestamp: 0
+            // NOTE : name, symbol, maturity, faceValue, couponRate, etc., are NOT stored here anymore
         });
 
-        // Update the tracking data
+        // --- Update Factory State ---
         bondRegistry[bondAddress] = record;
         allBonds.push(bondAddress);
         activeBonds.push(bondAddress);
-        // issuerToBonds[_issuer].push(bondAddress);
         issuerToBondIds[_issuer].push(_id);
         bondIdToAddress[_id] = bondAddress;
 
-        // Transfer ownership of the bond to the sender if they're the issuer
-        if (msg.sender == _issuer) {
-            newBond.transferOwnership(msg.sender);
-        }
+        // --- Transfer Ownership ---
+        newBond.transferOwnership(_issuer);
 
-        // Emit the TokenizedBondCreated event
-        emit TokenizedBondCreated(bondAddress, _name, _symbol, _issuer);
+        // --- Emit TokenizedBondCreated Event ---
+        string memory actualName = newBond.name();
+        string memory actualSymbol = newBond.symbol();
+        emit TokenizedBondCreated(
+            bondAddress,
+            actualName,
+            actualSymbol,
+            _issuer
+        );
 
-        // Update the bond price mapping
-        updateBondPrice(_id, bondAddress);
-
-        // Return the address of the new TokenizedBond contract
         return bondAddress;
     }
 
     /**
-     * @notice Update the price mapping for a bond
-     * @param bondId The unique identifier of the bond
-     * @param bondAddress The address of the bond contract
+     * @notice Decommission a bond, marking it as inactive in the registry.
+     * @dev This function can only be called by the bond owner or the original issuer.
+     * @param bondAddress The address of the bond contract to decommission.
      */
-    function updateBondPrice(uint256 bondId, address bondAddress) internal {
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        (uint256 tokensPerBond, uint256 tokenPrice, ) = bond.fractionInfo();
-        bondIdToPrice[bondId] = tokenPrice * tokensPerBond;
-    }
-
-    /**
-     * @notice Modify parameters of an existing TokenizedBond
-     * @param bondAddress Address of the TokenizedBond contract to modify
-     * @param _couponRate New coupon rate in basis points
-     * @param _maturityDate New maturity date
-     * @param _maxBondSupply New maximum bond supply
-     * @param _tokenPrice New bond price
-     */
-    function modifyBond(
-        address bondAddress,
-        uint256 _couponRate,
-        uint256 _maturityDate,
-        uint256 _maxBondSupply,
-        uint256 _tokenPrice
-    ) public {
-        // Ensure the bond exists and is active
-        require(
-            bondRegistry[bondAddress].active,
-            "Bond is not active or doesn't exist"
-        );
-
-        TokenizedBond bond = TokenizedBond(bondAddress);
-
-        // Call modifyBond on the TokenizedBond contract
-        bond.modifyBond(
-            _couponRate,
-            _maturityDate,
-            _maxBondSupply,
-            _tokenPrice
-        );
-
-        // Update the registry data if values have changed
+    function decommissionBond(address bondAddress) external {
         BondRecord storage record = bondRegistry[bondAddress];
-
-        // Only update if the value is legitimate, i.e. > 0
-        if (_couponRate > 0) {
-            record.couponRate = _couponRate;
-        }
-
-        if (_maturityDate > block.timestamp) {
-            record.maturityDate = _maturityDate;
-        }
-
-        if (_maxBondSupply > 0) {
-            record.maxBondSupply = _maxBondSupply;
-        }
-
-        updateBondPrice(bond.getBondId(), bondAddress);
-
-        emit BondModified(
-            bondAddress,
-            _couponRate,
-            _maturityDate,
-            _maxBondSupply,
-            _tokenPrice
-        );
-    }
-
-    //------------------------------- View Functions ----------------------------------------//
-
-    /**
-     * @notice Get the most recently created bond address
-     * @return Address of the most recently created bond
-     */
-    function getLatestBond() public view returns (address) {
-        require(allBonds.length > 0, "No bonds created yet");
-        return allBonds[allBonds.length - 1];
-    }
-
-    /**
-     * @notice Get the most recently created bond ID by issuer
-     * @param issuer Address of the issuer
-     * @return ID of the most recently created bond by the issuer
-     */
-    function getLatestBondByIssuer(
-        address issuer
-    ) public view returns (uint256) {
-        uint256[] storage issuerBonds = issuerToBondIds[issuer];
-        require(issuerBonds.length > 0, "No bonds created by this issuer");
-        return issuerBonds[issuerBonds.length - 1];
-    }
-
-    /**
-     * @notice Get a bond address by its creation index
-     * @param index Index in the creation sequence (0 = first created bond)
-     * @return Address of the bond at the specified index
-     */
-    function getBondByIndex(uint256 index) public view returns (address) {
-        require(index < allBonds.length, "Bond index out of bounds");
-        return allBonds[index];
-    }
-
-    /**
-     * @notice Get a bond ID and address by issuer and index
-     * @param issuer Address of the issuer
-     * @param index Index in the issuer's creation sequence
-     * @return bondId The unique identifier of the bond
-     * @return bondAddress Address of the bond at the specified index
-     */
-    function getIssuerBondByIndex(
-        address issuer,
-        uint256 index
-    ) public view returns (uint256 bondId, address bondAddress) {
         require(
-            index < issuerToBondIds[issuer].length,
-            "Bond index out of bounds for issuer"
+            record.bondAddress != address(0),
+            "Factory: Bond does not exist in registry"
+        );
+        require(record.active, "Factory: Bond is already decommissioned");
+
+        TokenizedBond bond = TokenizedBond(bondAddress);
+
+        require(
+            bond.owner() == msg.sender || record.issuer == msg.sender,
+            "Factory: Caller is not bond owner or original issuer"
         );
 
-        // Get the bond ID at the specified index
-        bondId = issuerToBondIds[issuer][index];
+        string memory bondName = bond.name();
+        string memory bondSymbol = bond.symbol();
 
-        // Get the address mapped to this bond ID
-        bondAddress = bondIdToAddress[bondId];
+        record.active = false;
+        record.decommissionTimestamp = block.timestamp;
 
-        return (bondId, bondAddress);
-    }
-
-    /**
-     * @notice Get the price of a bond by its ID
-     * @param bondId The unique identifier of the bond
-     * @return The current price of the bond in stablecoin units
-     */
-    function getBondPricebyId(uint256 bondId) public view returns (uint256) {
-        //require(allBonds.length > 0, "No bonds created yet");
-
-        /*
-        for (uint256 i = 0; i < allBonds.length; i++) {
-            TokenizedBond bond = TokenizedBond(allBonds[i]);
-            if (bond.getBondId() == bondId) {
-                (uint256 tokensPerBond, uint256 tokenPrice, ) = bond
-                    .fractionInfo();
-                return tokenPrice * tokensPerBond;
+        for (uint256 i = 0; i < activeBonds.length; i++) {
+            if (activeBonds[i] == bondAddress) {
+                activeBonds[i] = activeBonds[activeBonds.length - 1];
+                activeBonds.pop();
+                break;
             }
         }
 
-        revert("Bond ID not found");*/
-        return bondIdToPrice[bondId];
+        emit BondDecommissioned(
+            bondAddress,
+            bondName,
+            bondSymbol,
+            block.timestamp
+        );
     }
 
-    /*
-    Request the latest market price via Chainlink, and store the results in bondIdToPrice
-    Be noted that the request is async function, bondIdToPrice will only be upated by the callback function after a period of time.
-    */
+    //---------------------- Chainlink Oracle Operations -----------------------//
+    /**
+     * @notice Request the bond price from an external API using Chainlink.
+     * @dev This function constructs a Chainlink request and sends it to the oracle.
+     * @param bondId The unique identifier of the bond for which the price is requested.
+     * @return requestId The unique identifier for the Chainlink request.
+     */
     function requestBondPrice(
         uint256 bondId
     ) public returns (bytes32 requestId) {
@@ -359,24 +250,24 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
 
         req._add(
             "get",
-            "https://script.google.com/macros/s/AKfycbwElKgGgW3nRNYSpCwKwsDu8Su-ojG6wtOHQAAWFkT-7wDA3RIz-q8hOVa-o875-7ogHQ/exec"
+            "https://script.google.com/macros/s/AKfycbwElKgGgW3nRNYSpCwKwsDu8Su-ojG6wtOHQAAWFkT-7wDA3RIz-q8hOVa-o875-7ogHQ/exec" // Example URL
         );
-        //req._add("path", string(abi.encodePacked(bondId)));
-        req._add("path", bondId.toString());
-        int256 timesAmount = 100;
+        req._add("path", bondId.toString()); // Example path parameter
+        int256 timesAmount = 100; // Example modifier
         req._addInt("times", timesAmount);
 
-        // Sends the request and get the requestId
-        requestId = _sendChainlinkRequest(req, fee);
+        requestId = _sendChainlinkRequest(req, fee); // Uses internal oracle address
 
-        // Map the requestId to the bondId
         requestIdToBondId[requestId] = bondId;
 
         return requestId;
     }
 
     /**
-     * @notice Callback function called by Chainlink oracle to fulfill the request
+     * @notice Callback function for Chainlink to fulfill the bond price request.
+     * @dev This function is called by Chainlink when the price is fetched.
+     * @param _requestId The unique identifier for the Chainlink request.
+     * @param _price The fetched bond price.
      */
     function fulfill(
         bytes32 _requestId,
@@ -384,12 +275,15 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     ) public recordChainlinkFulfillment(_requestId) {
         emit RequestPrice(_requestId, _price);
         uint256 bondId = requestIdToBondId[_requestId];
-        latestFetchedPrice = _price;
-        bondIdToPrice[bondId] = _price;
+        if (bondId != 0) {
+            latestFetchedPrice = _price;
+            bondIdToPrice[bondId] = _price; // Store the fetched price
+            delete requestIdToBondId[_requestId];
+        }
     }
 
     /**
-     * Allow withdraw of Link tokens from the contract
+     * @notice Withdraw LINK tokens from the contract.
      */
     function withdrawLink() public onlyOwner {
         LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress());
@@ -399,42 +293,70 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         );
     }
 
+    //------------------- Basic Registry View Functions ---------------------//
+
     /**
-     * @notice Get a bond record by address
-     * @param bondAddress Address of the bond
-     * @return A BondRecord struct with the bond's details
+     * @notice Get the bond record from the registry.
+     * @param bondAddress The address of the bond contract.
+     * @return record The BondRecord struct containing minimal information.
      */
     function getBondRecord(
         address bondAddress
     ) public view returns (BondRecord memory) {
+        BondRecord storage record = bondRegistry[bondAddress];
         require(
-            bondRegistry[bondAddress].active ||
-                bondRegistry[bondAddress].decommissionTimestamp > 0,
-            "Bond does not exist"
+            record.bondAddress != address(0) ||
+                record.decommissionTimestamp > 0,
+            "Factory: Bond address not found in registry"
         );
-        return bondRegistry[bondAddress];
+        return record;
     }
+
     /**
-     * @notice Get the number of all bonds ever created
-     * @return Number of bonds
+     * @notice Get the bond price by its ID.
+     * @param bondId The unique identifier of the bond.
+     * @return price The price of the bond.
+     */
+    function getBondPricebyId(uint256 bondId) public view returns (uint256) {
+        return bondIdToPrice[bondId];
+    }
+
+    /**
+     * @notice Get the bond issuance price by its ID.
+     * @param bondId The unique identifier of the bond.
+     * @return price The issuance price of the bond.
+     */
+    function getBondIssuancePrice(
+        uint256 bondId
+    ) public view returns (uint256 price) {
+        address bondAddress = bondIdToAddress[bondId];
+        if (bondAddress == address(0)) {
+            return 0;
+        }
+        TokenizedBond bond = TokenizedBond(bondAddress);
+        return bond.getBondPrice();
+    }
+
+    /**
+     * @notice Get the total number of bonds created by this factory.
+     * @return count The total number of bonds.
      */
     function getTotalBondCount() public view returns (uint256) {
         return allBonds.length;
     }
 
     /**
-     * @notice Get the number of active bonds
-     * @return Number of active bonds
+     * @notice Get the total number of active bonds managed by this factory.
+     * @return count The total number of active bonds.
      */
     function getActiveBondCount() public view returns (uint256) {
         return activeBonds.length;
     }
 
     /**
-     * @notice Get all bond IDs created by a specific issuer
-     * @param issuer Address of the issuer
-     * @return Array of bond IDs created by the issuer
-     * @dev This function returns the bond IDs associated with the issuer
+     * @notice Get the total number of bonds created by a specific issuer.
+     * @param issuer The address of the issuer.
+     * @return count The total number of bonds created by the issuer.
      */
     function getBondsByIssuer(
         address issuer
@@ -443,100 +365,83 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
     }
 
     /**
-     * @notice Get count of bonds created by a specific issuer
-     * @param issuer Address of the issuer
-     * @return Number of bonds created by the issuer
+     * @notice Get the total number of bonds created by a specific issuer.
+     * @param issuer The address of the issuer.
+     * @return count The total number of bonds created by the issuer.
      */
     function getIssuerBondCount(address issuer) public view returns (uint256) {
         return issuerToBondIds[issuer].length;
     }
 
     /**
-     * @notice Get complete details of an active bond by its index in the activeBonds array
-     * @param index Array index
-     * @return bondAddress The address of the bond contract
-     * @return name The name of the bond
-     * @return symbol The symbol of the bond
-     * @return bondId The unique identifier of the bond
-     * @return faceValue The face value of the bond
-     * @return couponRate The coupon rate of the bond
-     * @return couponFrequency The coupon frequency of the bond
-     * @return maturityDate The maturity date of the bond
-     * @return issuer The issuer of the bond
-     * @return stablecoinAddress The address of the stablecoin used for payments
-     * @return tokensPerBond The number of tokens per bond
-     * @return tokenPrice The price of each token
-     * @return maxBondSupply The maximum supply of the bond
-     * @return creationTimestamp When the bond was created
+     * @notice Check if a bond is active.
+     * @param bondAddress The address of the bond contract.
+     * @return isActive True if the bond is active, false otherwise.
      */
-    function getActiveBondDetailsByIndex(
-        uint256 index
-    )
-        public
-        view
-        returns (
-            address bondAddress,
-            string memory name,
-            string memory symbol,
-            uint256 bondId,
-            uint256 faceValue,
-            uint256 couponRate,
-            uint256 couponFrequency,
-            uint256 maturityDate,
-            address issuer,
-            address stablecoinAddress,
-            uint256 tokensPerBond,
-            uint256 tokenPrice,
-            uint256 maxBondSupply,
-            uint256 creationTimestamp
-        )
-    {
-        require(index < activeBonds.length, "Index out of bounds");
-        address addr = activeBonds[index];
-        BondRecord storage record = bondRegistry[addr];
-
-        // Get the bond contract to retrieve additional parameters
-        TokenizedBond bond = TokenizedBond(addr);
-        uint256 id = bond.getBondId();
-        uint256 couponFreq = bond.getCouponFrequency();
-        address stablecoin = bond.getStablecoinAddress();
-        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
-
-        // Return full details
-        return (
-            addr,
-            record.name,
-            record.symbol,
-            id,
-            record.faceValue,
-            record.couponRate,
-            couponFreq,
-            record.maturityDate,
-            record.issuer,
-            stablecoin,
-            tokens,
-            price,
-            record.maxBondSupply,
-            record.creationTimestamp
-        );
+    function isBondActive(address bondAddress) public view returns (bool) {
+        return bondRegistry[bondAddress].active;
     }
+
     /**
-     * @notice Get complete details of an active bond by its ID
-     * @param bondId The unique identifier of the bond
-     * @return bondAddress The address of the bond contract
-     * @return name The name of the bond
-     * @return symbol The symbol of the bond
-     * @return returnBondId The unique identifier of the bond
-     * @return faceValue The face value of the bond
-     * @return couponRate The coupon rate of the bond
-     * @return couponFrequency The coupon frequency of the bond
-     * @return maturityDate The maturity date of the bond
-     * @return issuer The issuer of the bond
-     * @return stablecoinAddress The address of the stablecoin used for payments
-     * @return tokensPerBond The number of tokens per bond
-     * @return tokenPrice The price of each token
-     * @return maxBondSupply The maximum supply of the bond
-     * @return creationTimestamp When the bond was created
+     * @notice Get the latest bond created by this factory.
+     * @return bondAddress The address of the latest bond.
+     */
+    function getLatestBond() public view returns (address) {
+        require(allBonds.length > 0, "No bonds created yet");
+        return allBonds[allBonds.length - 1];
+    }
+
+    /**
+     * @notice Get the latest bond created by a specific issuer.
+     * @param issuer The address of the issuer.
+     * @return bondId The ID of the latest bond created by the issuer.
+     */
+    function getLatestBondByIssuer(
+        address issuer
+    ) public view returns (uint256) {
+        uint256[] storage issuerBonds = issuerToBondIds[issuer];
+        require(issuerBonds.length > 0, "No bonds created by this issuer");
+        return issuerBonds[issuerBonds.length - 1];
+    }
+
+    /**
+     * @notice Get the address of a bond by its index in the allBonds array.
+     * @param index The index of the bond in the allBonds array.
+     * @return bondAddress The address of the bond.
+     */
+    function getBondByIndex(uint256 index) public view returns (address) {
+        require(index < allBonds.length, "Bond index out of bounds");
+        return allBonds[index];
+    }
+
+    /**
+     * @notice Get the address of a bond by its index in the activeBonds array.
+     * @param index The index of the bond in the activeBonds array.
+     * @param issuer The address of the issuer.
+     * @return bondId The ID of the bond.
+     * @return bondAddress The address of the bond.
+     */
+    function getIssuerBondByIndex(
+        address issuer,
+        uint256 index
+    ) public view returns (uint256 bondId, address bondAddress) {
+        uint256[] storage _issuerBondIds = issuerToBondIds[issuer]; // Use storage pointer
+        require(
+            index < _issuerBondIds.length,
+            "Bond index out of bounds for issuer"
+        );
+        bondId = _issuerBondIds[index];
+        bondAddress = bondIdToAddress[bondId];
+        return (bondId, bondAddress);
+    }
+
+    //------------------- Detailed View Functions (Fetch On-Demand & Return Struct) ---------------------//
+
+    /**
+     * @notice Get complete details of an active bond by its ID.
+     * @dev Finds address from ID, then fetches data via external calls. Returns a struct.
+     * @param bondId The unique identifier of the bond.
+     * @return details A BondDetails struct containing combined information.
      */
     function getActiveBondDetailsByBondId(
         uint256 bondId
@@ -544,82 +449,35 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         public
         view
         returns (
-            address bondAddress,
-            string memory name,
-            string memory symbol,
-            uint256 returnBondId, // renamed to avoid confusion
-            uint256 faceValue,
-            uint256 couponRate,
-            uint256 couponFrequency,
-            uint256 maturityDate,
-            address issuer,
-            address stablecoinAddress,
-            uint256 tokensPerBond,
-            uint256 tokenPrice,
-            uint256 maxBondSupply,
-            uint256 creationTimestamp
+            BondDetails memory details // FIX: Return the BondDetails struct
         )
     {
-        // Find the bond contract with this ID
-        address foundAddress = address(0);
-
-        for (uint256 i = 0; i < activeBonds.length; i++) {
-            TokenizedBond currentBond = TokenizedBond(activeBonds[i]);
-            if (currentBond.getBondId() == bondId) {
-                foundAddress = activeBonds[i];
-                break;
-            }
-        }
-
+        address bondAddress = bondIdToAddress[bondId];
         require(
-            foundAddress != address(0),
-            "Bond ID not found in active bonds"
+            bondAddress != address(0),
+            "Factory: Bond ID not found in registry"
         );
 
-        BondRecord storage record = bondRegistry[foundAddress];
-        TokenizedBond bond = TokenizedBond(foundAddress);
+        BondRecord storage record = bondRegistry[bondAddress];
+        require(record.active, "Factory: Bond found but is not active");
 
-        // Get additional parameters from the bond contract
-        uint256 couponFreq = bond.getCouponFrequency();
-        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
-        address stablecoin = bond.getStablecoinAddress();
+        // Delegate fetching to the other function
+        details = getBondDetailsByAddress(bondAddress);
 
-        // Return full details
-        return (
-            foundAddress,
-            record.name,
-            record.symbol,
-            bondId,
-            record.faceValue,
-            record.couponRate,
-            couponFreq,
-            record.maturityDate,
-            record.issuer,
-            stablecoin,
-            tokens,
-            price,
-            record.maxBondSupply,
-            record.creationTimestamp
-        );
+        // The check for isActive happens implicitly within getBondDetailsByAddress
+        // if needed, or can be re-verified here on the returned struct if desired.
+        // require(details.isActive, "Factory: Inconsistency - bond marked inactive");
+
+        return details; // Return the populated struct
     }
 
     /**
-     * @notice Get complete details of a bond by its contract address
-     * @param bondAddress Address of the bond contract
-     * @return name The name of the bond
-     * @return symbol The symbol of the bond
-     * @return bondId The unique identifier of the bond
-     * @return faceValue The face value of the bond
-     * @return couponRate The coupon rate of the bond
-     * @return couponFrequency The coupon frequency of the bond
-     * @return maturityDate The maturity date of the bond
-     * @return issuer The issuer of the bond
-     * @return stablecoinAddress The address of the stablecoin used for payments
-     * @return tokensPerBond The number of tokens per bond
-     * @return tokenPrice The price of each token
-     * @return maxBondSupply The maximum supply of the bond
-     * @return creationTimestamp When the bond was created
-     * @return isActive Whether the bond is currently active
+     * @notice Get complete details of a bond by its contract address.
+     * @dev Fetches registry data from the factory and detailed parameters via external
+     *      calls to the specified TokenizedBond contract. Returns a struct.
+     *      Uses destructuring based on compiler errors indicating tuple returns.
+     * @param bondAddress Address of the bond contract.
+     * @return details A BondDetails struct containing combined information.
      */
     function getBondDetailsByAddress(
         address bondAddress
@@ -627,199 +485,70 @@ contract BondFactory is ChainlinkClient, ConfirmedOwner {
         public
         view
         returns (
-            string memory name,
-            string memory symbol,
-            uint256 bondId,
-            uint256 faceValue,
-            uint256 couponRate,
-            uint256 couponFrequency,
-            uint256 maturityDate,
-            address issuer,
-            address stablecoinAddress,
-            uint256 tokensPerBond,
-            uint256 tokenPrice,
-            uint256 maxBondSupply,
-            uint256 creationTimestamp,
-            bool isActive
+            BondDetails memory details // Return the BondDetails struct
         )
     {
-        require(
-            bondRegistry[bondAddress].bondAddress != address(0),
-            "Bond does not exist"
-        );
-
+        // 1. Fetch the minimal record stored in the factory registry
         BondRecord storage record = bondRegistry[bondAddress];
-        TokenizedBond bond = TokenizedBond(bondAddress);
-
-        // Get additional parameters from the bond contract
-        uint256 id = bond.getBondId();
-        uint256 couponFreq = bond.getCouponFrequency();
-        (uint256 tokens, uint256 price, ) = bond.fractionInfo();
-        address stablecoin = bond.getStablecoinAddress();
-
-        // Return full details
-        return (
-            record.name,
-            record.symbol,
-            id,
-            record.faceValue,
-            record.couponRate,
-            couponFreq,
-            record.maturityDate,
-            record.issuer,
-            stablecoin,
-            tokens,
-            price,
-            record.maxBondSupply,
-            record.creationTimestamp,
-            record.active
-        );
-    }
-
-    /**
-     * @notice Check if a bond is active
-     * @param bondAddress Address of the bond
-     * @return Whether the bond is active
-     */
-    function isBondActive(address bondAddress) public view returns (bool) {
         require(
-            bondRegistry[bondAddress].bondAddress != address(0),
-            "Bond does not exist"
-        );
-        return bondRegistry[bondAddress].active;
-    }
-
-    // ------------------------------- Bond Operations ----------------------------------------//
-
-    /**
-     * @notice Purchase bonds for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     * @param bondAmount Number of bonds to purchase
-     */
-    function purchaseBonds(
-        address bondAddress,
-        address investor,
-        uint256 bondAmount
-    ) external {
-        // require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.purchaseBondFor(investor, bondAmount);
-    }
-
-    /**
-     * @notice Claim coupon payment for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     */
-    function claimCoupon(address bondAddress, address investor) external {
-        // require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.claimCouponFor(investor);
-    }
-
-    /**
-     * @notice Redeem bonds for an investor through the factory
-     * @param bondAddress Address of the TokenizedBond
-     * @param investor Address of the investor
-     */
-    function redeemBonds(address bondAddress, address investor) external {
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.redeemFor(investor);
-    }
-
-    // /**
-    //  * @notice Add addresses to whitelist for a bond
-    //  * @param bondAddress Address of the TokenizedBond
-    //  * @param accounts Addresses to whitelist
-    //  */
-    // function addToWhitelist(
-    //     address bondAddress,
-    //     address[] calldata accounts
-    // ) external {
-    //     require(bondRegistry[bondAddress].active, "Bond not active");
-    //     TokenizedBond bond = TokenizedBond(bondAddress);
-    //     bond.addToWhitelist(accounts);
-    // }
-
-    // /**
-    //  * @notice Set KYC status for accounts
-    //  * @param bondAddress Address of the TokenizedBond
-    //  * @param accounts Addresses to update
-    //  * @param approved KYC approval status
-    //  */
-    // function setKycStatus(
-    //     address bondAddress,
-    //     address[] calldata accounts,
-    //     bool approved
-    // ) external {
-    //     require(bondRegistry[bondAddress].active, "Bond not active");
-    //     TokenizedBond bond = TokenizedBond(bondAddress);
-    //     bond.setKycStatus(accounts, approved);
-    // }
-
-    /**
-     * @notice Mint new bonds to the specified address
-     * @param bondAddress Address of the TokenizedBond
-     * @param to Recipient address
-     * @param bondAmount Amount of bonds to mint
-     */
-    function mintBond(
-        address bondAddress,
-        address to,
-        uint256 bondAmount
-    ) external {
-        // require(bondRegistry[bondAddress].active, "Bond not active");
-        TokenizedBond bond = TokenizedBond(bondAddress);
-        bond.mintBond(to, bondAmount);
-    }
-
-    /**
-     * @notice Decommission a bond after all tokens have been redeemed
-     * @dev Only the bond owner or issuer can decommission a bond
-     * @param bondAddress Address of the TokenizedBond contract to decommission
-     */
-    function decommissionBond(address bondAddress) external {
-        // Verify bond exists
-        BondRecord storage record = bondRegistry[bondAddress];
-        require(record.bondAddress != address(0), "Bond does not exist");
-        require(record.active, "Bond is already decommissioned");
-
-        // Get the bond contract
-        TokenizedBond bond = TokenizedBond(bondAddress);
-
-        // Verify caller is authorized (either bond owner or issuer)
-        require(
-            bond.owner() == msg.sender || record.issuer == msg.sender,
-            "Only bond owner or issuer can decommission"
+            record.bondAddress != address(0),
+            "Factory: Bond address not found in registry"
         );
 
-        // Verify all tokens have been redeemed
-        // require(
-        //     bond.totalSupply() == 0,
-        //     "Cannot decommission bond with outstanding tokens"
-        // );
+        // 2. Instantiate the target TokenizedBond contract
+        TokenizedBond bond = TokenizedBond(bondAddress);
 
-        // Update the bond record
-        record.active = false;
-        record.decommissionTimestamp = block.timestamp;
+        // 3. Fetch data directly from the TokenizedBond contract
 
-        // Remove from active bonds list
-        for (uint256 i = 0; i < activeBonds.length; i++) {
-            if (activeBonds[i] == bondAddress) {
-                // Swap with the last element and then pop
-                activeBonds[i] = activeBonds[activeBonds.length - 1];
-                activeBonds.pop();
-                break;
-            }
-        }
+        // --- Fetch Basic ERC20/Direct Public Data ---
+        details.name = bond.name(); // Standard ERC20 getter
+        details.symbol = bond.symbol(); // Standard ERC20 getter
+        details.stablecoinAddress = address(bond.stablecoin()); // Public getter for stablecoin address
+        details.bondAddress = bondAddress; // Assign the address
 
-        // Emit decommission event
-        emit BondDecommissioned(
-            bondAddress,
-            record.name,
-            record.symbol,
-            block.timestamp
-        );
+        uint256 bInfo_bondId;
+        address bInfo_issuer;
+        uint256 bInfo_issueDate;
+        uint256 bInfo_lastCouponPaymentDate;
+        uint256 bInfo_totalCouponsPaid;
+        uint256 bInfo_totalBondsMinted;
+        string memory bInfo_name_unused;
+        string memory bInfo_symbol_unused;
+
+        (
+            bInfo_name_unused, // name
+            bInfo_symbol_unused, // symbol
+            bInfo_bondId, // bondId
+            bInfo_issuer, // issuer
+            details.maxBondSupply, // maxBondSupply
+            details.maturityDate, // maturityDate
+            details.faceValue, // faceValue
+            details.couponRate, // couponRate
+            details.couponFrequency, // couponFrequency
+            bInfo_issueDate, // issueDate
+            bInfo_lastCouponPaymentDate, // lastCouponPaymentDate
+            bInfo_totalCouponsPaid, // totalCouponsPaid
+            bInfo_totalBondsMinted // totalBondsMinted
+            // ^ Ensure this is exactly 13 variables in the correct order ^
+        ) = bond.bondInfo(); // Assume compiler sees this returning 13 values
+
+        // --- Unpack FractionalizationInfo using destructuring assignment (4 components expected by error) ---
+        (
+            details.tokensPerBond, // tokensPerBond
+            details.tokenPrice, // tokenPrice
+            details.totalRaised, // totalRaised
+            details.maxOfferingSize // maxOfferingSize
+            // ^ Ensure this is exactly 4 variables in the correct order ^
+        ) = bond.fractionInfo(); // Assume compiler sees this returning 4 values
+
+        // 4. Populate remaining fields in the details struct from Factory's BondRecord
+        details.bondId = record.bondId; // Use ID from the factory's record
+        details.issuer = record.issuer; // Use issuer from the factory's record
+        details.creationTimestamp = record.creationTimestamp;
+        details.isActive = record.active;
+        details.decommissionTimestamp = record.decommissionTimestamp;
+
+        // 5. Return the populated struct
+        return details;
     }
 }
