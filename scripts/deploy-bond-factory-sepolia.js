@@ -2,7 +2,7 @@
 const { ethers } = require("hardhat");
 
 // Deployed contract address on Sepolia
-const contractAddress = "0xDDdB03448d4dbBd3E6A6B945B0813a5147AE535b";
+const contractAddress = "0x9fDE71d5C11623257A46b3BEb64a8954CA7197E2";
 
 // ABI of the deployed contract
 const abi = [
@@ -28,7 +28,7 @@ async function main() {
 
     const bondName = `Bond No.${bondCount}`;
     const bondSymbol = `TBOND${bondCount}`;
-    const bondId = 888;
+    const bondId = bondCount;
     const faceValue = ethers.parseUnits("1000", 6);  // 1000 USDC (6 decimals)
     const couponRate = 398;  // 5.00% (in basis points)
     const couponFrequency = 2;  // Semi-annual payments
@@ -48,7 +48,7 @@ async function main() {
         couponFrequency,               // _couponFrequency
         maturityDate,  // _maturityDate (1 year from now)
         signer.address,  // _issuer
-      "0x7573492A25674f1359261720A7Bcf6CDDbea04ae", // _stablecoinAddress
+      "0x4b84D11FAD4dD6fb6277E055D0892023456eeCFc", // _stablecoinAddress
       tokensPerBond,             // _tokensPerBond
       bondPrice,            // _bondPrice
       maxBondSupply            // _maxBondSupply
