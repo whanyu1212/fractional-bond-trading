@@ -1,258 +1,200 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useActiveAccount, useReadContract } from "thirdweb/react";
-import { prepareContractCall, sendTransaction } from "thirdweb";
-import { toast } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster";
-import { Navbar } from "@/components/navbar";
+import { prepareContractCall, sendTransaction, readContract } from "thirdweb";
+import { bondMarketPlaceContract, coinContract } from "@/constants/contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { bondContract } from "@/constants/contract";
+import { Navbar } from "@/components/navbar";
+import { Toaster } from "@/components/ui/toaster";
+import { toast } from "@/hooks/use-toast";
 
-// Define the Bond type based on your contract's returned data.
-type Bond = {
+const DECIMALS = 6;
+const TOKENS_PER_BOND = 1000;
+
+interface Bond {
   index: number;
-  bondAddress: string;
-  name: string;
-  symbol: string;
   issuer: string;
-  maturityDate: string;
-  faceValue: number;
-};
+  bondAddress: string;
+  price: number;
+  listingTime: string;
+  isMatured: boolean;
+  totalHolders: number;
+}
 
-export default function Trade() {
+export default function TradePage() {
   const account = useActiveAccount();
-
-  // Number of bonds to check. Adjust as needed.
-  const numberOfBonds = 8;
-
-  // Create an array of contract read hooks for each bond index.
-  const bondRequests = Array.from({ length: numberOfBonds }, (_, i) =>
-    useReadContract({
-      contract: bondContract,
-      method:
-        "function getActiveBondDetailsByIndex(uint256 index) view returns (address bondAddress, string name, string symbol, address issuer, uint256 maturityDate, uint256 faceValue)",
-      params: [BigInt(i)],
-    })
-  );
-
-  // State to hold the available bonds.
-  const [availableBonds, setAvailableBonds] = useState<Bond[]>([]);
-
-  // Process the bond requests once all are loaded.
-  useEffect(() => {
-    const allLoaded = bondRequests.every((req) => !req.isPending);
-    if (allLoaded) {
-      const bondsList: Bond[] = bondRequests
-        .map((req, i) => {
-          if (req.data) {
-            return {
-              index: i,
-              bondAddress: req.data[0],
-              name: req.data[1],
-              symbol: req.data[2],
-              issuer: req.data[3],
-              maturityDate: new Date(Number(req.data[4]) * 1000).toLocaleDateString(),
-              faceValue: Number(req.data[5]) / 1e18, // Assuming 18 decimals
-            };
-          }
-          return null;
-        })
-        .filter((bond): bond is Bond => bond !== null);
-      setAvailableBonds(bondsList);
-    }
-  }, bondRequests.map((req) => req.isPending));
-
-  // Trade form states.
-  const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
+  const [bonds, setBonds] = useState<Bond[]>([]);
+  const [selectedBondIndex, setSelectedBondIndex] = useState<string>("");
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [transactionResult, setTransactionResult] = useState<any>(null);
-  const [showResultModal, setShowResultModal] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
 
-  // Handle the purchaseBonds call.
-  const handlePurchaseBonds = async () => {
+  const { data: totalListedBonds } = useReadContract({
+    contract: bondMarketPlaceContract,
+    method: "function totalListedBonds() view returns (uint256)",
+    params: [],
+  });
+
+  useEffect(() => {
+    async function fetchListedBonds() {
+      if (!totalListedBonds) return;
+      const count = Number(totalListedBonds);
+      const result: Bond[] = [];
+
+      console.log("🔍 Total listed bonds:", count);
+
+      for (let i = 0; i < count; i++) {
+        try {
+          const data = await readContract({
+            contract: bondMarketPlaceContract,
+            method:
+              "function getBondInfo(uint256 index) view returns (address issuer, uint256 price, uint256 listingTime, bool isMatured, uint256 totalHolders)",
+            params: [BigInt(i)],
+          });
+
+          if (data && data[0] !== "0x0000000000000000000000000000000000000000" && !data[3]) {
+            result.push({
+              index: i,
+              issuer: data[0],
+              bondAddress: data[0],
+              price: Number(data[1]) / 10 ** DECIMALS,
+              listingTime: new Date(Number(data[2]) * 1000).toLocaleDateString(),
+              isMatured: data[3],
+              totalHolders: Number(data[4]),
+            });
+          }
+        } catch (err) {
+          console.warn(`❌ Failed to fetch bond #${i}`, err);
+        }
+      }
+
+      setBonds(result);
+    }
+
+    fetchListedBonds();
+  }, [totalListedBonds]);
+
+  const selectedBond = bonds.find((b) => b.index.toString() === selectedBondIndex);
+
+  const handlePurchase = async () => {
     if (!account) {
-      toast({
-        title: "No wallet connected",
-        description: "Please connect your wallet first.",
-        variant: "destructive",
-      });
+      toast({ title: "Wallet not connected", variant: "destructive" });
       return;
     }
     if (!selectedBond) {
-      toast({
-        title: "No bond selected",
-        description: "Please select a bond from the dropdown.",
-        variant: "destructive",
-      });
+      toast({ title: "No bond selected", variant: "destructive" });
       return;
     }
-    if (!purchaseAmount || isNaN(Number(purchaseAmount)) || Number(purchaseAmount) <= 0) {
-      toast({
-        title: "Invalid purchase amount",
-        description: "Please enter a valid amount.",
-        variant: "destructive",
-      });
+    const amount = Number(purchaseAmount);
+    if (!amount || isNaN(amount) || amount <= 0) {
+      toast({ title: "Invalid amount", variant: "destructive" });
       return;
     }
+    if (selectedBond.isMatured) {
+      toast({ title: "This bond has matured and cannot be purchased.", variant: "destructive" });
+      return;
+    }
+
     try {
       setIsPurchasing(true);
-      // Prepare the purchaseBonds contract call.
-      const transaction = await prepareContractCall({
-        contract: bondContract,
-        method: "function purchaseBonds(address bondAddress, address investor, uint256 bondAmount)",
-        params: [
-          selectedBond.bondAddress, // from the dropdown
-          account.address, // current user's address
-          BigInt(purchaseAmount),
-        ],
+
+      // Step 1: Calculate required stablecoin cost
+      const tokenPrice = selectedBond.price * 10 ** DECIMALS;
+      const requiredCost = BigInt(tokenPrice * TOKENS_PER_BOND * amount);
+
+      // Step 2: Check user balance
+      const balance = await readContract({
+        contract: coinContract,
+        method: "function balanceOf(address) view returns (uint256)",
+        params: [account.address],
       });
-      const result = await sendTransaction({
-        transaction,
-        account,
+      const userBalance = Number(balance);
+
+      if (userBalance < Number(requiredCost)) {
+        toast({
+          title: "Insufficient balance",
+          description: `You need ${requiredCost / BigInt(10 ** DECIMALS)} USDC, but only have ${userBalance / 10 ** DECIMALS} USDC`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Step 3: Approve stablecoin to bondAddress
+      const approveTx = await prepareContractCall({
+        contract: coinContract,
+        method: "function approve(address spender, uint256 amount)",
+        params: [selectedBond.bondAddress, requiredCost],
       });
-      setTransactionResult(result);
-      setShowResultModal(true);
-      toast({
-        title: "Bonds purchased successfully!",
-        variant: "default",
+      await sendTransaction({ transaction: approveTx, account });
+      console.log("✅ approve successful");
+
+      // Step 4: Purchase bond
+      const purchaseTx = await prepareContractCall({
+        contract: bondMarketPlaceContract,
+        method: "function purchaseBond(uint256 bondId, uint256 amount)",
+        params: [BigInt(selectedBond.index), BigInt(amount)],
       });
+      const receipt = await sendTransaction({ transaction: purchaseTx, account });
+      console.log("✅ purchase successful", receipt);
+      setTransactionHash(receipt.transactionHash);
+      toast({ title: "Purchase complete!", description: receipt.transactionHash });
       setPurchaseAmount("");
+    } catch (err) {
+      console.error("❌ Error purchasing bond:", err);
+      toast({ title: "Purchase failed", description: String(err), variant: "destructive" });
+    } finally {
       setIsPurchasing(false);
-    } catch (error) {
-      console.error("Error purchasing bonds:", error);
-      setIsPurchasing(false);
-      toast({
-        title: "Bond purchase failed",
-        description: "See console for details.",
-        variant: "destructive",
-      });
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <Toaster />
       <Navbar />
-
       <div className="container mx-auto py-10 px-4">
-        <div className="text-center">
-          <h1 className="text-4xl font-extrabold tracking-tight text-gray-800 sm:text-5xl">
-            Trade Page
-          </h1>
-          <p className="mt-3 text-xl text-gray-600">
-            Welcome to the Trade page!
-          </p>
+        <div className="text-center mb-10">
+          <h1 className="text-4xl font-extrabold text-gray-800">Trade Bonds</h1>
+          <p className="text-gray-600 text-lg mt-2">Select a bond and purchase</p>
         </div>
-
-        <div className="mt-12 max-w-md mx-auto">
-          <div className="bg-white rounded-xl p-6 shadow-xl border border-gray-200">
-            <h2 className="text-2xl font-semibold text-blue-700 mb-6">
-              Purchase Bonds
-            </h2>
-
-            {/* Dropdown for selecting an available bond */}
-            <div className="mb-4">
-              <label htmlFor="bondSelect" className="block text-sm font-medium text-gray-700 mb-1">
-                Select Bond (Contract Name)
-              </label>
-              <select
-                id="bondSelect"
-                value={selectedBond ? selectedBond.bondAddress : ""}
-                onChange={(e) => {
-                  const bond = availableBonds.find((b) => b.bondAddress === e.target.value) || null;
-                  setSelectedBond(bond);
-                }}
-                className="block w-full p-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-- Choose a Bond --</option>
-                {availableBonds.map((bond) => (
-                  <option key={bond.bondAddress} value={bond.bondAddress}>
-                    {bond.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Input for Bond Amount */}
-            <div className="mb-4">
-              <label htmlFor="purchaseAmount" className="block text-sm font-medium text-gray-700 mb-1">
-                Bond Amount
-              </label>
-              <Input
-                id="purchaseAmount"
-                type="number"
-                min="1"
-                value={purchaseAmount}
-                onChange={(e) => setPurchaseAmount(e.target.value)}
-                placeholder="Enter purchase amount"
-                className="shadow-sm"
-              />
-            </div>
-
-            {/* Display the Investor (current account) */}
-            <div className="mb-6">
-              <p className="text-sm text-gray-700">
-                <strong>Investor Address:</strong>{" "}
-                {account?.address
-                  ? `${account.address.substring(0, 6)}...${account.address.substring(account.address.length - 4)}`
-                  : "Not connected"}
-              </p>
-            </div>
-
-            {/* Purchase Button */}
-            <Button
-              onClick={handlePurchaseBonds}
-              disabled={isPurchasing || !account}
-              className="w-full py-3 text-base font-bold"
+        <div className="max-w-md mx-auto bg-white rounded-xl p-6 shadow-lg border">
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Select Bond</label>
+            <select
+              value={selectedBondIndex}
+              onChange={(e) => setSelectedBondIndex(e.target.value)}
+              className="block w-full p-3 border border-gray-300 rounded-md"
             >
-              {isPurchasing ? "Purchasing..." : "Purchase Bonds"}
-            </Button>
+              <option value="">-- Choose a Bond --</option>
+              {bonds.map((bond) => (
+                <option key={bond.index} value={bond.index.toString()}>
+                  Bond No.{bond.index} - {bond.price} USDC
+                </option>
+              ))}
+            </select>
           </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+            <Input
+              type="number"
+              min="1"
+              value={purchaseAmount}
+              onChange={(e) => setPurchaseAmount(e.target.value)}
+              placeholder="Enter amount"
+            />
+          </div>
+          <div className="text-sm text-gray-600 mb-4">
+            <strong>Wallet:</strong> {account?.address.slice(0, 6)}...{account?.address.slice(-4)}
+          </div>
+          <Button onClick={handlePurchase} disabled={isPurchasing} className="w-full">
+            {isPurchasing ? "Purchasing..." : "Purchase"}
+          </Button>
+          {transactionHash && (
+            <p className="mt-4 text-xs text-gray-500 break-all">Tx Hash: {transactionHash}</p>
+          )}
         </div>
       </div>
-
-      {/* Transaction Result Modal */}
-      {showResultModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-lg w-full mx-4 p-6 border border-gray-200 shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-blue-700">Transaction Result</h3>
-              <button
-                onClick={() => setShowResultModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" 
-                     viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                        d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-4 mb-4 overflow-auto max-h-96">
-              <p className="text-green-600 mb-2 text-lg font-semibold">
-                Status: {transactionResult?.status || "Success"}
-              </p>
-              <p className="text-gray-700 mb-2">
-                <span className="font-semibold">Transaction Hash:</span>{" "}
-                <span className="text-blue-600 break-all">
-                  {transactionResult?.transactionHash || "Not available"}
-                </span>
-              </p>
-            </div>
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setShowResultModal(false)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow"
-              >
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
