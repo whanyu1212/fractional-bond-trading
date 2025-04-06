@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useActiveAccount, useReadContract } from "thirdweb/react";
 import { prepareContractCall, sendTransaction, readContract } from "thirdweb";
-import { bondMarketPlaceContract, coinContract } from "@/constants/contract";
+import { bondMarketPlaceContract, coinContract, bondContract } from "@/constants/contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/navbar";
@@ -16,7 +16,6 @@ const TOKENS_PER_BOND = 1000;
 interface Bond {
   index: number;
   issuer: string;
-  bondAddress: string;
   price: number;
   listingTime: string;
   isMatured: boolean;
@@ -58,7 +57,6 @@ export default function TradePage() {
             result.push({
               index: i,
               issuer: data[0],
-              bondAddress: data[0],
               price: Number(data[1]) / 10 ** DECIMALS,
               listingTime: new Date(Number(data[2]) * 1000).toLocaleDateString(),
               isMatured: data[3],
@@ -92,40 +90,26 @@ export default function TradePage() {
       toast({ title: "Invalid amount", variant: "destructive" });
       return;
     }
-    if (selectedBond.isMatured) {
-      toast({ title: "This bond has matured and cannot be purchased.", variant: "destructive" });
-      return;
-    }
 
     try {
       setIsPurchasing(true);
 
-      // Step 1: Calculate required stablecoin cost
+      // Step 1: Calculate required stablecoin cost (tokenPrice * tokensPerBond * amount)
       const tokenPrice = selectedBond.price * 10 ** DECIMALS;
       const requiredCost = BigInt(tokenPrice * TOKENS_PER_BOND * amount);
 
-      // Step 2: Check user balance
-      const balance = await readContract({
-        contract: coinContract,
-        method: "function balanceOf(address) view returns (uint256)",
-        params: [account.address],
+      // Step 2: Get actual bond contract address from bondContract
+      const bondAddress = await readContract({
+        contract: bondContract,
+        method: "function bondIdToAddress(uint256 bondId) view returns (address)",
+        params: [BigInt(selectedBond.index)],
       });
-      const userBalance = Number(balance);
-
-      if (userBalance < Number(requiredCost)) {
-        toast({
-          title: "Insufficient balance",
-          description: `You need ${requiredCost / BigInt(10 ** DECIMALS)} USDC, but only have ${userBalance / 10 ** DECIMALS} USDC`,
-          variant: "destructive",
-        });
-        return;
-      }
 
       // Step 3: Approve stablecoin to bondAddress
       const approveTx = await prepareContractCall({
         contract: coinContract,
         method: "function approve(address spender, uint256 amount)",
-        params: [selectedBond.bondAddress, requiredCost],
+        params: [bondAddress, requiredCost],
       });
       await sendTransaction({ transaction: approveTx, account });
       console.log("✅ approve successful");
