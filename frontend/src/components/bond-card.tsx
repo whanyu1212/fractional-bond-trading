@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useReadContract } from "thirdweb/react";
-import { bondContract } from "@/constants/contract";
+import { bondMarketPlaceContract } from "@/constants/contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Search, ExternalLink, Calendar, DollarSign, User, LinkIcon, X } from "lucide-react";
 import { Loader2 } from "lucide-react";
+import { useReadContract } from "thirdweb/react";
+
 import {
   Dialog,
   DialogContent,
@@ -19,29 +20,15 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-
-
-// Define Bond type
+// Define Bond type to match the actual contract return values
 interface Bond {
   index: number;
-  bondAddress: string;
-  name: string;
-  symbol: string;
-  bondId: string;
-  faceValue: number;
-  couponRate: number;
-  couponFrequency: number;
-  maturityDate: string;
   issuer: string;
-  stablecoinAddress: string;
-  tokensPerBond: number;
-  tokenPrice: number;
-  maxBondSupply: number;
-  creationTimestamp: number;
+  price: number;
+  listingTime: string;
+  isMatured: boolean;
+  totalHolders: number;
 }
-
-// Assuming bondContract is defined elsewhere
-// import { bondContract } from './contracts';
 
 export function BondCard() {
   const [bonds, setBonds] = useState<Bond[]>([]);
@@ -51,11 +38,18 @@ export function BondCard() {
   const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // Create contract reads for the first 3 bonds
-  const bondRequests = Array.from({ length: 4 }, (_, i) => {
+  // const { data: bondCount, isPending } = useReadContract({
+  //   contract: bondMarketPlaceContract,
+  //   method: "function totalListedBonds() view returns (uint256)",
+  //   params: [],
+  // });
+
+
+  // Create contract reads for the first 4 bonds
+  const bondRequests = Array.from({ length: 10 }, (_, i) => {
     return useReadContract({
-      contract: bondContract,
-      method: "function getActiveBondDetailsByIndex(uint256 index) view returns (address bondAddress, string name, string symbol, uint256 bondId, uint256 faceValue, uint256 couponRate, uint256 couponFrequency, uint256 maturityDate, address issuer, address stablecoinAddress, uint256 tokensPerBond, uint256 tokenPrice, uint256 maxBondSupply, uint256 creationTimestamp)",
+      contract: bondMarketPlaceContract,
+      method: "function getBondInfo(uint256 index) view returns (address issuer, uint256 price, uint256 listingTime, bool isMatured, uint256 totalHolders)",
       params: [BigInt(i)],
     });
   });
@@ -72,20 +66,11 @@ export function BondCard() {
           if (req.data) {
             return {
               index: i,
-              bondAddress: req.data[0],
-              name: req.data[1],
-              symbol: req.data[2],
-              bondId: req.data[3].toString(),
-              faceValue: Number(req.data[4])/1e6, // Assuming 18 decimals
-              couponRate: Number(req.data[5]) / 100, // Convert basis points to percentage
-              couponFrequency: Number(req.data[6]),
-              maturityDate: new Date(Number(req.data[7]) * 1000).toLocaleDateString(),
-              issuer: req.data[8],
-              stablecoinAddress: req.data[9],
-              tokensPerBond: Number(req.data[10]),
-              tokenPrice: Number(req.data[11]) / 1e6,
-              maxBondSupply: Number(req.data[12])/1e6,
-              creationTimestamp: Number(req.data[13])
+              issuer: req.data[0], // address issuer
+              price: Number(req.data[1]) / 1e6, // uint256 price (converted from wei to USDC)
+              listingTime: new Date(Number(req.data[2]) * 1000).toLocaleDateString(), // uint256 listingTime
+              isMatured: req.data[3], // bool isMatured
+              totalHolders: Number(req.data[4]) // uint256 totalHolders
             };
           }
           return null;
@@ -96,11 +81,10 @@ export function BondCard() {
       setFilteredBonds(bondsList);
       setLoading(false);
     }
-  }, [bondRequests.map(req => req.isPending).join()]); // Fixed dependency array
+  }, [bondRequests.map(req => req.isPending).join()]);
 
   // Handle search by index
   const handleSearch = () => {
-    console.log("Searching for index:", searchIndex);
     if (searchIndex === "") {
       setFilteredBonds(bonds);
       return;
@@ -113,7 +97,6 @@ export function BondCard() {
     }
     
     const foundBond = bonds.find(bond => bond.index === index);
-    console.log("Found bond:", foundBond);
     setFilteredBonds(foundBond ? [foundBond] : []);
   };
 
@@ -134,24 +117,23 @@ export function BondCard() {
     <Card className="w-full mb-4">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle>{bond.name}</CardTitle>
-          <Badge variant="outline">{bond.symbol}</Badge>
+          <CardTitle>Bond #{bond.index}</CardTitle>
+          <Badge variant={bond.isMatured ? "destructive" : "outline"}>
+            {bond.isMatured ? "Matured" : "Active"}
+          </Badge>
         </div>
-        <CardDescription>Bond #{bond.index}</CardDescription>
+        <CardDescription>Listed on {bond.listingTime}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="text-muted-foreground">Issuer</div>
           <div className="font-medium truncate">{formatAddress(bond.issuer)}</div>
           
-          <div className="text-muted-foreground">Maturity Date</div>
-          <div className="font-medium">{bond.maturityDate}</div>
+          <div className="text-muted-foreground">Price</div>
+          <div className="font-medium">{bond.price} USDC</div>
           
-          <div className="text-muted-foreground">Face Value</div>
-          <div className="font-medium">{bond.faceValue} USDC</div>
-          
-          <div className="text-muted-foreground">Coupon Rate</div>
-          <div className="font-medium">{bond.couponRate}%</div>
+          <div className="text-muted-foreground">Total Holders</div>
+          <div className="font-medium">{bond.totalHolders}</div>
         </div>
       </CardContent>
       <CardFooter>
@@ -215,11 +197,13 @@ export function BondCard() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>{selectedBond?.name} ({selectedBond?.symbol})</span>
-              <Badge variant="outline">Bond #{selectedBond?.index}</Badge>
+              <span>Bond Details</span>
+              <Badge variant={selectedBond?.isMatured ? "destructive" : "outline"}>
+                {selectedBond?.isMatured ? "Matured" : "Active"}
+              </Badge>
             </DialogTitle>
             <DialogDescription>
-              Detailed information about this bond
+              Detailed information about Bond #{selectedBond?.index}
             </DialogDescription>
           </DialogHeader>
           
@@ -243,75 +227,36 @@ export function BondCard() {
               </div>
               
               <div className="flex items-start space-x-3">
-                <LinkIcon className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="space-y-1">
-                  <p className="font-medium text-sm">Bond Address</p>
-                  <div className="flex items-center space-x-1">
-                    <p className="text-sm text-muted-foreground break-all">{selectedBond.bondAddress}</p>
-                    <button 
-                      className="text-primary hover:text-primary/80"
-                      onClick={() => navigator.clipboard.writeText(selectedBond.bondAddress)}
-                      title="Copy to clipboard"
-                    >
-                      <LinkIcon className="h-3 w-3" />
-                    </button>
-                  </div>
+                  <p className="font-medium text-sm">Listing Date</p>
+                  <p className="text-sm text-muted-foreground">{selectedBond.listingTime}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Price</p>
+                  <p className="text-sm text-muted-foreground">{selectedBond.price} USDC</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <User className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-medium text-sm">Total Holders</p>
+                  <p className="text-sm text-muted-foreground">{selectedBond.totalHolders}</p>
                 </div>
               </div>
               
               <div className="flex items-start space-x-3">
                 <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="space-y-1">
-                  <p className="font-medium text-sm">Maturity Date</p>
-                  <p className="text-sm text-muted-foreground">{selectedBond.maturityDate}</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-3">
-                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">Face Value</p>
-                  <p className="text-sm text-muted-foreground">{selectedBond.faceValue} USDC</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-3">
-                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">Coupon Rate</p>
-                  <p className="text-sm text-muted-foreground">{selectedBond.couponRate}%</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-3">
-                <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">Coupon Frequency</p>
+                  <p className="font-medium text-sm">Status</p>
                   <p className="text-sm text-muted-foreground">
-                    {selectedBond.couponFrequency === 1 ? 'Annual' : 
-                    selectedBond.couponFrequency === 2 ? 'Semi-annual' : 
-                    selectedBond.couponFrequency === 4 ? 'Quarterly' : 
-                    selectedBond.couponFrequency === 12 ? 'Monthly' : 
-                    `${selectedBond.couponFrequency} times per year`}
+                    {selectedBond.isMatured ? 'Matured' : 'Active'}
                   </p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-3">
-                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">Token Details</p>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedBond.tokensPerBond} tokens per bond at {selectedBond.tokenPrice} USDC each
-                  </p>
-                </div>
-              </div>
-              
-              <div className="flex items-start space-x-3">
-                <DollarSign className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium text-sm">Maximum Supply</p>
-                  <p className="text-sm text-muted-foreground">{selectedBond.maxBondSupply} bonds</p>
                 </div>
               </div>
             </div>
@@ -320,13 +265,13 @@ export function BondCard() {
           <DialogFooter className="flex justify-between items-center sm:justify-between">
             <Button variant="outline" asChild>
               <a 
-                href={`https://sepolia.etherscan.io/address/${selectedBond?.bondAddress}`} 
+                href={`https://sepolia.etherscan.io/address/${selectedBond?.issuer}`} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1"
               >
                 <ExternalLink className="h-4 w-4" />
-                View on Etherscan
+                View Issuer on Etherscan
               </a>
             </Button>
             <DialogClose asChild>

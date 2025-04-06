@@ -3,9 +3,9 @@ import { defineChain, getContract } from "thirdweb";
 import { base } from "thirdweb/chains";
 // import { sepoliaTestnet } from "@/chain.config";
 
-export const bondFactoryAddress = "0x6d009Ec19f8c90b52d0229f4Cd34686465bEf48c";
-export const mockStableCoinAddress = "0x4b84D11FAD4dD6fb6277E055D0892023456eeCFc";
-// export const BondMarketPlaceAddress = "0xd5B44461c1Ac4fD686b5322691D8eB82636bC9f9";
+export const bondFactoryAddress = "0x8f0CEd3a1a468d9A4968879F918Bcfb18DA8dc24";
+export const mockStableCoinAddress = "0x9A1ac536dCFa4ddf7a219AcF70F9CFd25660eFFf";
+export const BondMarketPlaceAddress = "0xF66B3B3F6DdD8260B47eE1b00e7ab0e81965Bfd7";
 const sepoliaTestnet = defineChain(11155111);
 
 export const bondContract = getContract({
@@ -19,5 +19,12 @@ export const coinContract = getContract({
     client: client,
     // chain: base,
     address: mockStableCoinAddress,
+    chain: sepoliaTestnet
+});
+
+export const bondMarketPlaceContract = getContract({
+    client: client,
+    // chain: base,
+    address: BondMarketPlaceAddress,
     chain: sepoliaTestnet
 });
