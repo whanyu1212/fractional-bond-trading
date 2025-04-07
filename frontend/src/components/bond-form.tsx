@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { max } from "date-fns";
 
 export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
   const { toast } = useToast();
@@ -35,8 +36,9 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
     couponFrequency: "2", // Default to semi-annual
     customCouponFrequency: "",
     tokensPerBond: "",
-    bondPrice: "",
+    tokenPrice: "",
     maxBondSupply: "",
+    maxOfferSize: "",
     maturityDate: "",
   });
 
@@ -82,7 +84,7 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
       const tx = prepareContractCall({
         contract: bondContract,
         method:
-          "function createTokenizedBond(string _name, string _symbol, uint256 _id, uint256 _faceValue, uint256 _couponRate, uint256 _couponFrequency, uint256 _maturityDate, address _issuer, address _stablecoinAddress, uint256 _tokensPerBond, uint256 _bondPrice, uint256 _maxBondSupply) returns (address)",
+          "function createTokenizedBond(string _name, string _symbol, uint256 _id, uint256 _faceValue, uint256 _couponRate, uint256 _couponFrequency, uint256 _maturityDate, address _issuer, address _stablecoinAddress, uint256 _tokensPerBond, uint256 _tokenPrice, uint256 _maxBondSupply, uint256 _maxOfferingSize) returns (address)",
         params: [
           form.bondName,
           form.bondSymbol,
@@ -94,8 +96,9 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
           account.address,
           mockStableCoinAddress,
           BigInt(form.tokensPerBond),
-          BigInt(form.bondPrice),
+          BigInt(form.tokenPrice),
           BigInt(form.maxBondSupply),
+          BigInt(form.maxOfferSize), // Assuming maxOfferingSize is same as maxBondSupply
         ],
       });
 
@@ -114,10 +117,10 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
         faceValue: form.faceValue,
         couponRate: form.couponRate,
         maturityDate: form.maturityDate,
-        price: form.bondPrice,
+        price: form.tokenPrice,
         issuer: account.address,
         supply: form.maxBondSupply,
-        remaining: form.maxBondSupply,
+        remaining: form.maxOfferSize,
         createdAt: new Date().toISOString().split('T')[0]
       };
 
@@ -135,8 +138,9 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
         couponFrequency: "2",
         customCouponFrequency: "",
         tokensPerBond: "",
-        bondPrice: "",
+        tokenPrice: "",
         maxBondSupply: "",
+        maxOfferSize: "",
         maturityDate: "",
       });
       
@@ -246,8 +250,8 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
           <Input
             type="number"
             placeholder="Enter bond price"
-            value={form.bondPrice}
-            onChange={(e) => handleChange("bondPrice", e.target.value)}
+            value={form.tokenPrice}
+            onChange={(e) => handleChange("tokenPrice", e.target.value)}
             className="border-blue-200 focus:border-blue-500 focus:ring-blue-500 rounded-md"
           />
         </div>
@@ -262,6 +266,18 @@ export function BondForm({ onSuccess }: { onSuccess: (newBond: any) => void }) {
             className="border-blue-200 focus:border-blue-500 focus:ring-blue-500 rounded-md"
           />
         </div>
+
+        <div className="space-y-2">
+          <label className="block text-sm font-bold text-blue-700">Max Offer Size</label>
+          <Input
+            type="number"
+            placeholder="Enter max offer size"
+            value={form.maxOfferSize}
+            onChange={(e) => handleChange("maxOfferSize", e.target.value)}
+            className="border-blue-200 focus:border-blue-500 focus:ring-blue-500 rounded-md"
+          />
+        </div>
+        
 
         <div className="space-y-2">
           <label className="block text-sm font-bold text-blue-700">Maturity Date</label>
