@@ -9,6 +9,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Navbar } from "@/components/navbar";
 import { BondCard } from "@/components/bond-card";
 import { UserBonds } from "@/components/user-bond";
+import { UserPurchases } from "@/components/user-purchases";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // Import coinContract (for mint & balance) and bondContract (for bond actions)
 import { coinContract, bondContract } from "@/constants/contract";
@@ -458,18 +460,7 @@ export default function Account() {
 
             <TabsContent value="market" className="space-y-6">
               <div className="bg-white rounded-lg border border-blue-200 shadow-sm p-6">
-                <h2 className="text-xl font-semibold mb-4 text-blue-900">
-                  My Bond Purchases
-                </h2>
-                {isBondsLoading ? (
-                  <div>Loading bonds...</div>
-                ) : bonds && bonds.length > 0 ? (
-                  bonds.map((bond: Bond, index: number) => (
-                    <BondItem key={index} bond={bond} account={account} />
-                  ))
-                ) : (
-                  <p>No bonds found.</p>
-                )}
+                <UserPurchases />
               </div>
             </TabsContent>
           </Tabs>
