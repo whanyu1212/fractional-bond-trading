@@ -97,7 +97,7 @@ export function UserPurchases() {
                     <CardTitle className="flex items-center">
                       Bond ID: {bondId.toString()}
                     </CardTitle>
-                    <CardDescription>Issuer: {formatAddress(issuerAddresses[index] || "")}</CardDescription>
+                    <CardDescription>Address: {formatAddress(issuerAddresses[index] || "")}</CardDescription>
                   </div>
                   <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-3 py-1">
                     Amount: {amounts[index]?.toString() || "0"}
@@ -106,7 +106,7 @@ export function UserPurchases() {
               </CardHeader>
               <CardFooter className="bg-gray-50 border-t flex justify-between items-center p-3">
                 <div>
-                  <p className="text-xs text-gray-500">Created by: {formatAddress(issuerAddresses[index] || "")}</p>
+                  <p className="text-xs text-gray-500">Address is: {formatAddress(issuerAddresses[index] || "")}</p>
                 </div>
                 <Button 
                   variant="outline" 

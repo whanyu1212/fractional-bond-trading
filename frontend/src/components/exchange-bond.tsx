@@ -164,7 +164,7 @@ export default function ExchangeBond({ isOpen, onClose, bondId, fromAddress }: E
                 name="bondId"
                 type="number"
                 value={form.bondId}
-                readOnly
+                onChange={handleInputChange}
                 className="bg-gray-50"
               />
               <Button
