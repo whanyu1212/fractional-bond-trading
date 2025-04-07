@@ -113,7 +113,7 @@ export function UserPurchases() {
                   className="flex gap-2 items-center bg-gradient-to-r from-green-50 to-green-100 border-green-300 hover:bg-green-200 hover:border-green-400 transition-colors duration-200 text-green-700 font-medium px-4 py-2 rounded-md shadow-sm"
                   onClick={() => handleExchangeClick(Number(bondId))}
                 >
-                  <span>Exchange Bond</span>
+                  <span>Transfer Bond</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </CardFooter>

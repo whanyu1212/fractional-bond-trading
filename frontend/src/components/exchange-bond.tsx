@@ -153,7 +153,7 @@ export default function ExchangeBond({ isOpen, onClose, bondId, fromAddress }: E
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Exchange Bond #{bondId}</DialogTitle>
+          <DialogTitle>Transfer Bond #{bondId}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
@@ -259,7 +259,7 @@ export default function ExchangeBond({ isOpen, onClose, bondId, fromAddress }: E
               disabled={isProcessing || !form.toAddress}
               className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
             >
-              View your transaction
+              Preview your transaction
             </Button>
             <Button
               onClick={handleExchangeSubmit}
@@ -272,7 +272,7 @@ export default function ExchangeBond({ isOpen, onClose, bondId, fromAddress }: E
                   Processing...
                 </>
               ) : (
-                "Write"
+                "Execute"
               )}
             </Button>
           </div>
