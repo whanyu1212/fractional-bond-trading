@@ -9,7 +9,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Navbar } from "@/components/navbar";
 import { BondCard } from "@/components/bond-card";
 import { UserBonds } from "@/components/user-bond";
-import { UserPurchases } from "@/components/user-purchases";
+import { UserPurchases } from "@/components/user-purchase";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 // Import coinContract (for mint & balance) and bondContract (for bond actions)
