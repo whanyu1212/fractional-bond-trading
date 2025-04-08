@@ -241,7 +241,7 @@ export function UserBonds() {
       // Show success toast
       toast({
         title: "Success!",
-        description: `Coupon payment for Bond #${bondId} has been claimed successfully.`,
+        description: `Interest payment for Bond #${bondId} has been successfully sent.`,
         duration: 5000,
       });
       
@@ -334,7 +334,7 @@ export function UserBonds() {
                     </>
                   ) : (
                     <>
-                      <span>Claim Coupon</span>
+                      <span>Pay Interest</span>
                       <ChevronRight className="h-4 w-4" />
                     </>
                   )}
