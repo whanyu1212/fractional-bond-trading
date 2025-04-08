@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useActiveAccount, useReadContract } from "thirdweb/react";
-import { prepareContractCall, sendTransaction, readContract } from "thirdweb";
-import { bondMarketPlaceContract, coinContract, bondContract } from "@/constants/contract";
+import { useActiveAccount, useReadContract, useSendTransaction } from "thirdweb/react";
+import { prepareContractCall, readContract } from "thirdweb";
+import {
+  bondMarketPlaceContract,
+  coinContract,
+  bondContract,
+} from "@/constants/contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Navbar } from "@/components/navbar";
@@ -11,7 +15,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { toast } from "@/hooks/use-toast";
 
 const DECIMALS = 6;
-const TOKENS_PER_BOND = 1000;
 
 interface Bond {
   index: number;
@@ -24,8 +27,11 @@ interface Bond {
 
 export default function TradePage() {
   const account = useActiveAccount();
+  // Removed useNetwork as it is not exported from "thirdweb/react"
+  const { mutate: sendTransaction } = useSendTransaction();
+
   const [bonds, setBonds] = useState<Bond[]>([]);
-  const [selectedBondIndex, setSelectedBondIndex] = useState<string>("");
+  const [selectedBondIndex, setSelectedBondIndex] = useState("");
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
@@ -41,8 +47,6 @@ export default function TradePage() {
       if (!totalListedBonds) return;
       const count = Number(totalListedBonds);
       const result: Bond[] = [];
-
-      console.log("🔍 Total listed bonds:", count);
 
       for (let i = 0; i < count; i++) {
         try {
@@ -67,24 +71,19 @@ export default function TradePage() {
           console.warn(`❌ Failed to fetch bond #${i}`, err);
         }
       }
-
       setBonds(result);
     }
-
     fetchListedBonds();
   }, [totalListedBonds]);
 
   const selectedBond = bonds.find((b) => b.index.toString() === selectedBondIndex);
 
   const handlePurchase = async () => {
-    if (!account) {
-      toast({ title: "Wallet not connected", variant: "destructive" });
+    if (!account || !selectedBond) {
+      toast({ title: "Wallet not connected or bond not selected", variant: "destructive" });
       return;
     }
-    if (!selectedBond) {
-      toast({ title: "No bond selected", variant: "destructive" });
-      return;
-    }
+
     const amount = Number(purchaseAmount);
     if (!amount || isNaN(amount) || amount <= 0) {
       toast({ title: "Invalid amount", variant: "destructive" });
@@ -93,41 +92,73 @@ export default function TradePage() {
 
     try {
       setIsPurchasing(true);
+      setTransactionHash(null);
 
-      // Step 1: Calculate required stablecoin cost (tokenPrice * tokensPerBond * amount)
-      const tokenPrice = selectedBond.price * 10 ** DECIMALS;
-      const requiredCost = BigInt(tokenPrice * TOKENS_PER_BOND * amount);
+      console.log("🔍 Wallet address:", account.address);
+      console.log("🧠 Bond index:", selectedBond.index);
 
-      // Step 2: Get actual bond contract address from bondContract
       const bondAddress = await readContract({
         contract: bondContract,
-        method: "function bondIdToAddress(uint256 bondId) view returns (address)",
+        method: "function bondIdToAddress(uint256) view returns (address)",
         params: [BigInt(selectedBond.index)],
       });
 
-      // Step 3: Approve stablecoin to bondAddress
-      const approveTx = await prepareContractCall({
+      const fractionData = await readContract({
+        contract: { ...bondContract, address: bondAddress as `0x${string}` },
+        method: "function fractionInfo() view returns (uint256,uint256,uint256,uint256)",
+        params: [],
+      });
+
+      const bondInternalTokenPrice = BigInt(fractionData[0]);
+      const tokensPerBond = BigInt(fractionData[1]);
+      const requiredCost = bondInternalTokenPrice * tokensPerBond * BigInt(amount);
+
+      console.log("🏛️ Bond Contract Address:", bondAddress);
+      console.log("💰 bondInternalTokenPrice:", bondInternalTokenPrice.toString());
+      console.log("📦 tokensPerBond:", tokensPerBond.toString());
+      console.log("📉 requiredCost:", requiredCost.toString());
+
+      const approveTx = prepareContractCall({
         contract: coinContract,
-        method: "function approve(address spender, uint256 amount)",
+        method: "function approve(address,uint256)",
         params: [bondAddress, requiredCost],
       });
-      await sendTransaction({ transaction: approveTx, account });
-      console.log("✅ approve successful");
 
-      // Step 4: Purchase bond
-      const purchaseTx = await prepareContractCall({
-        contract: bondMarketPlaceContract,
-        method: "function purchaseBond(uint256 bondId, uint256 amount)",
-        params: [BigInt(selectedBond.index), BigInt(amount)],
+      sendTransaction(approveTx, {
+        onSuccess: (approveReceipt) => {
+          console.log("🟢 Approve txHash:", approveReceipt.transactionHash);
+
+          const purchaseTx = prepareContractCall({
+            contract: bondMarketPlaceContract,
+            method: "function purchaseBond(uint256,uint256)",
+            params: [BigInt(selectedBond.index), BigInt(amount)],
+          });
+
+          sendTransaction(purchaseTx, {
+            onSuccess: (receipt) => {
+              console.log("✅ purchaseBond receipt:", receipt);
+              const txLink = `https://sepolia.etherscan.io/tx/${receipt.transactionHash}`;
+              toast({
+                title: "Purchase successful",
+                description: <a href={txLink} target="_blank" className="underline text-blue-600">View on Etherscan</a>,
+              });
+              setTransactionHash(receipt.transactionHash);
+              setPurchaseAmount("");
+            },
+            onError: (err) => {
+              console.error("❌ purchase TX failed", err);
+              toast({ title: "Purchase failed", description: String(err), variant: "destructive" });
+            },
+          });
+        },
+        onError: (err) => {
+          console.error("❌ approve TX failed", err);
+          toast({ title: "Approval failed", description: String(err), variant: "destructive" });
+        },
       });
-      const receipt = await sendTransaction({ transaction: purchaseTx, account });
-      console.log("✅ purchase successful", receipt);
-      setTransactionHash(receipt.transactionHash);
-      toast({ title: "Purchase complete!", description: receipt.transactionHash });
-      setPurchaseAmount("");
-    } catch (err) {
-      console.error("❌ Error purchasing bond:", err);
-      toast({ title: "Purchase failed", description: String(err), variant: "destructive" });
+    } catch (err: any) {
+      console.error("purchaseBond failed:", err);
+      toast({ title: "Error", description: err.message || String(err), variant: "destructive" });
     } finally {
       setIsPurchasing(false);
     }
@@ -169,13 +200,15 @@ export default function TradePage() {
             />
           </div>
           <div className="text-sm text-gray-600 mb-4">
-            <strong>Wallet:</strong> {account?.address.slice(0, 6)}...{account?.address.slice(-4)}
+            <strong>Wallet:</strong> {account?.address ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}` : "Not connected"}
           </div>
-          <Button onClick={handlePurchase} disabled={isPurchasing} className="w-full">
+          <Button onClick={handlePurchase} disabled={isPurchasing || !account} className="w-full">
             {isPurchasing ? "Purchasing..." : "Purchase"}
           </Button>
           {transactionHash && (
-            <p className="mt-4 text-xs text-gray-500 break-all">Tx Hash: {transactionHash}</p>
+            <p className="mt-4 text-xs text-blue-500 break-all">
+              View on Etherscan: <a href={`https://sepolia.etherscan.io/tx/${transactionHash}`} target="_blank" rel="noopener noreferrer" className="underline">{transactionHash}</a>
+            </p>
           )}
         </div>
       </div>
