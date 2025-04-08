@@ -14,6 +14,7 @@ A proof of concept implementation of a blockchain-based fractional bond trading 
   - [BondFactory Contract](#bondfactory-contract)
   - [MockStableCoin Contract](#mockstablecoin-contract)
   - [BondMarketPlace Contract](#bondmarketplace-contract)
+- [User Story](#user-story)
   
 ---
 ### Setup Guide
@@ -79,6 +80,62 @@ npm start
 ---
 
 ### Smart Contract Overview
+
+
+```mermaid
+sequenceDiagram
+    participant Deployer
+    participant BondFactory
+    participant BondMarketPlace
+    participant TokenizedBond
+    participant MockStableCoin
+    participant Player
+
+    %% Initial Setup
+    Deployer->>MockStableCoin: deploy(name, symbol)
+    Deployer->>BondFactory: deploy()
+    Deployer->>BondMarketPlace: deploy()
+
+    %% Bond Creation Flow
+    Player->>BondFactory: createTokenizedBond(parameters)
+    BondFactory->>TokenizedBond: deploy(parameters)
+    BondFactory-->>TokenizedBond: transferOwnership(issuer)
+    
+    %% Listing Flow
+    Player->>BondMarketPlace: listBond(bondId, bondAddress, price)
+    BondMarketPlace-->>TokenizedBond: verify bond details
+
+    %% Purchase Flow
+    Note over Player,MockStableCoin: Purchase Process
+    Player->>MockStableCoin: approve(bondAddress, amount)
+    Player->>BondMarketPlace: purchaseBond(bondId, amount)
+    BondMarketPlace->>TokenizedBond: purchaseBondFor(buyer, amount)
+    TokenizedBond->>MockStableCoin: transferFrom(buyer, bondContract, cost)
+    TokenizedBond-->>Player: mint(fractionalTokens)
+
+    %% Coupon Payment Flow
+    Note over Player,MockStableCoin: Coupon Claim
+    Player->>BondMarketPlace: claimCoupon(bondId)
+    BondMarketPlace->>TokenizedBond: claimCouponFor(claimer)
+    TokenizedBond->>MockStableCoin: transfer(claimer, couponAmount)
+
+    %% Trading Flow
+    Note over Player,TokenizedBond: P2P Trading
+    Player->>TokenizedBond: approve(bondAddress, tokenAmount)
+    Player->>BondMarketPlace: exchangeBonds(bondId, from, to, tokenAmount, payment)
+    BondMarketPlace->>TokenizedBond: exchangeBonds(from, to, tokenAmount, payment)
+    TokenizedBond->>MockStableCoin: transferFrom(buyer, seller, payment)
+    TokenizedBond-->>Player: transfer(tokenAmount)
+
+    %% Redemption Flow
+    Note over Player,MockStableCoin: Redemption
+    Player->>BondMarketPlace: redeemBond(bondId)
+    BondMarketPlace->>TokenizedBond: redeemFor(redeemer)
+    TokenizedBond->>TokenizedBond: burn(bonds)
+    TokenizedBond->>MockStableCoin: transfer(redeemer, redemptionAmount)
+```
+---
+
 #### TokenizedBond Contract
 
 The `TokenizedBond` contract is an ERC20 token that represents a bond with a fixed coupon rate and maturity date. It inherits from OpenZeppelin's `ERC20` and `Ownable` contracts, providing token functionality and access control. The contract includes features for bond lifecycle management, fractional ownership, regulatory compliance (KYC and whitelisting), and financial safety.
@@ -115,6 +172,7 @@ The `TokenizedBond` contract is an ERC20 token that represents a bond with a fix
     *   `tokensPerBond`: Total ERC20 tokens representing one bond.
     *   `tokenPrice`: Price of one token in stablecoin.
     *   `totalRaised`: Total amount raised from bond sales.
+    *   `maxOfferingSize`: Maximum amount of stablecoin to raise.
 
 <u>Public Variables</u>
 
@@ -134,32 +192,31 @@ The `TokenizedBond` contract is an ERC20 token that represents a bond with a fix
 
 <u>Constructor</u>
 
-*   `TokenizedBond(string memory _name, string memory _symbol, uint256 _id, uint256 _faceValue, uint256 _couponRate, uint256 _couponFrequency, uint256 _maturityDate, address _issuer, address _stablecoinAddress, uint256 _tokensPerBond, uint256 _tokenPrice, uint256 _maxBondSupply)`: Initializes the bond with the provided parameters, including bond details, fractionalization info, and the stablecoin address. It also sets the owner of the contract.
+*   `constructor(string memory _name, string memory _symbol, uint256 _id, uint256 _faceValue, uint256 _couponRate, uint256 _couponFrequency, uint256 _maturityDate, address _issuer, address _stablecoinAddress, uint256 _tokensPerBond, uint256 _tokenPrice, uint256 _maxBondSupply, uint256 _maxOfferingSize)`: Initializes the bond with the provided parameters, including bond details, fractionalization info, and the stablecoin address.
 
 <u>External Functions</u>
 
-*   `modifyBond(uint256 _couponRate, uint256 _maturityDate, uint256 _maxBondSupply, uint256 _tokenPrice)`: Modifies bond parameters such as coupon rate, maturity date, maximum bond supply, and token price. Can only be called by the owner.
-*   `mintBond(address to, uint256 bondAmount)`: Mints new bonds to the specified address. Can only be called by the owner.
-*   `setDocumentURI(string calldata _documentURI)`: Sets the document URI for legal documentation. Can only be called by the owner.
-*   `setDocumentHash(bytes32 _documentHash)`: Sets the document hash for legal documentation. Can only be called by the owner.
-*   `addToWhitelist(address[] calldata accounts)`: Adds addresses to the transfer whitelist. Can only be called by the owner.
-*   `removeFromWhitelist(address[] calldata accounts)`: Removes addresses from the transfer whitelist. Can only be called by the owner.
-*   `setKycStatus(address[] calldata accounts, bool approved)`: Sets KYC status for accounts. Can only be called by the owner.
-*   `purchaseBondFor(address buyer, uint256 tokenAmount)`: Allows a buyer to purchase bonds in terms of tokens.
-*   `claimCouponFor(address claimer)`: Allows a holder to claim coupon payments.
-*   `redeemFor(address redeemer)`: Allows a holder to redeem the bond after maturity.
-*   `swapBonds(address from, address to, uint256 tokenAmount, uint256 stablecoinAmount)`: Swaps bonds between two approved holders.
+*   `modifyBond(uint256 _couponRate, uint256 _maturityDate, uint256 _maxBondSupply, uint256 _tokenPrice, uint256 _maxOfferingSize)`: Modifies bond parameters. Owner only.
+*   `mintBond(address to, uint256 bondAmount)`: Mints new bonds to a specified address. Owner only.
+*   `purchaseBondFor(address buyer, uint256 bondAmount)`: Allows primary market purchase of bonds.
+*   `claimCouponFor(address claimer)`: Claims coupon payments for a holder.
+*   `batchClaimCoupons(address[] calldata claimers)`: Claims coupons for multiple holders.
+*   `redeemFor(address redeemer)`: Redeems bonds after maturity.
+*   `batchRedeemBonds(address[] calldata redeemers)`: Redeems bonds for multiple holders.
+*   `exchangeBonds(address from, address to, uint256 tokenAmount, uint256 stablecoinAmount)`: Facilitates P2P bond trading/gifting.
 
 <u>View Functions</u>
 
-*   `getBondPrice()`: Returns the bond price in stablecoin.
-*   `getBondId()`: Returns the bond ID.
-*   `verifyDocument(string calldata documentContent)`: Verifies the hash of a document.
-*   `canTransfer(address from, address to)`: Checks if a transfer is allowed based on whitelist, KYC, and maturity status.
+*   `getBondPrice()`: Returns bond price in stablecoin.
+*   `getBondId()`: Returns bond ID.
+*   `getCouponFrequency()`: Returns coupon payment frequency.
+*   `getStablecoinAddress()`: Returns stablecoin contract address.
+*   `getTokensPerBond()`: Returns tokens per bond ratio.
+*   `verifyDocument(string calldata)`: Verifies document hash.
 
 <u>Internal Functions</u>
 
-*   `_beforeTokenTransfer(address from, address to, uint256 amount)`:  This function is overridden from the ERC20 contract.  It checks if a transfer is allowed using the `canTransfer` function before any token transfer occurs.
+*   `_beforeTokenTransfer(address from, address to, uint256 amount)`: Pre-transfer validation hook.
 </details>
 
 <br>
@@ -167,19 +224,19 @@ The `TokenizedBond` contract is an ERC20 token that represents a bond with a fix
 <details>
 <summary><strong>Events</strong></summary>
 
-*   `BondModified(uint256 couponRate, uint256 maturityDate, uint256 maxBondSupply, uint256 tokenPrice)`: Emitted when bond parameters are modified.
-*   `BondMinted(address indexed to, uint256 bondAmount, uint256 tokenAmount)`: Emitted when new bonds are minted.
-*   `BondPurchased(address indexed buyer, uint256 bondAmount)`: Emitted when bonds are purchased.
-*   `CouponPaid(address indexed claimer, uint256 couponAmount)`: Emitted when coupon payments are made.
-*   `BondRedeemed(address indexed redeemer, uint256 redemptionAmount)`: Emitted when bonds are redeemed.
-*   `DocumentURIUpdated(string documentURI)`: Emitted when the document URI is updated.
-*   `DocumentHashUpdated(bytes32 documentHash)`: Emitted when the document hash is updated.
-*   `AddedToWhitelist(address indexed account)`: Emitted when an address is added to the whitelist.
-*   `RemovedFromWhitelist(address indexed account)`: Emitted when an address is removed from the whitelist.
-*   `KycStatusChanged(address indexed account, bool approved)`: Emitted when the KYC status of an account is changed.
-*   `BondSwapped(address indexed from, address indexed to, uint256 tokenAmount, uint256 stablecoinAmount)`: Emitted when bonds are swapped between two holders.
+*   `BondModified(uint256 couponRate, uint256 maturityDate, uint256 maxBondSupply, uint256 tokenPrice)`: Parameter updates.
+*   `BondMinted(address indexed to, uint256 bondAmount, uint256 tokenAmount)`: New token minting.
+*   `BondPurchased(address indexed buyer, uint256 bondAmount)`: Primary market purchases.
+*   `CouponPaid(address indexed claimer, uint256 couponAmount)`: Coupon payments.
+*   `BondRedeemed(address indexed redeemer, uint256 redemptionAmount)`: Redemptions.
+*   `DocumentURIUpdated(string documentURI)`: Documentation URI updates.
+*   `DocumentHashUpdated(bytes32 documentHash)`: Documentation hash updates.
+*   `AddedToWhitelist(address indexed account)`: Whitelist additions.
+*   `RemovedFromWhitelist(address indexed account)`: Whitelist removals.
+*   `KycStatusChanged(address indexed account, bool approved)`: KYC status changes.
+*   `BondTraded(address indexed from, address indexed to, uint256 tokenAmount, uint256 stablecoinAmount)`: P2P trades.
+*   `BondGifted(address indexed from, address indexed to, uint256 tokenAmount)`: P2P gifts.
 </details>
-
 
 <br>
 
@@ -227,8 +284,9 @@ classDiagram
 
     class FractionalizationInfo {
         +uint256 tokensPerBond
-        +uint256 bondPrice
+        +uint256 tokenPrice
         +uint256 totalRaised
+        +uint256 maxOfferingSize
     }
 
     class DocumentInfo {
@@ -261,39 +319,38 @@ The `BondFactory` contract manages the creation and lifecycle of `TokenizedBond`
 <details>
 <summary><strong>State Variables</strong></summary>
 
-<u>Bond Registry</u>
+<u>Chainlink Oracle State</u>
 
-* `BondRecord`: Struct containing:
-  * `bondAddress`: Address of the bond contract.
-  * `name`: Name of the bond.
-  * `symbol`: Symbol of the bond.
-  * `active`: Whether the bond is currently active.
-  * `creationTimestamp`: When the bond was created.
-  * `maturityDate`: When the bond matures.
-  * `decommissionTimestamp`: When the bond was decommissioned (if applicable).
-  * `issuer`: Address of the bond issuer.
-  * `faceValue`: Face value of the bond.
-  * `couponRate`: Annual coupon rate.
-  * `maxBondSupply`: Maximum supply of the bond.
+* `jobId`: ID of the Chainlink job for price queries
+* `fee`: Fee paid for Chainlink requests
+* `oracle`: Address of the Chainlink oracle
+* `latestFetchedPrice`: Most recently fetched price from Chainlink
+* `bondIdToPrice`: Maps bond ID to its current price
+* `requestIdToBondId`: Maps Chainlink request IDs to bond IDs
 
-<u>Storage Mappings</u>
+<u>Registry State</u>
 
-* `bondIdToPrice`: Maps bond ID to its current price.
-* `requestIdToBondId`: Maps Chainlink request IDs to bond IDs.
-* `bondRegistry`: Maps bond addresses to their `BondRecord` data.
-* `issuerToBonds`: Maps issuer addresses to arrays of their bond addresses.
+* `BondRecord`: Struct containing minimal metadata:
+  * `bondAddress`: Address of the deployed TokenizedBond contract
+  * `bondId`: The unique ID provided during creation
+  * `issuer`: Address designated as the issuer
+  * `active`: Managed by the factory (true on creation, false on decommission)
+  * `creationTimestamp`: Timestamp of creation in the factory
+  * `decommissionTimestamp`: Timestamp of decommissioning in the factory
 
-<u>Bond Lists</u>
+* `BondDetails`: Extended struct for detailed views containing:
+  * Factory Record fields (bondId, issuer, timestamps, etc.)
+  * TokenizedBond Contract fields (name, symbol, face value, etc.)
+  * Current state (totalRaised, isActive, etc.)
 
-* `allBonds`: Array of all bond addresses ever created.
-* `activeBonds`: Array of currently active bond addresses.
+<u>Storage Mappings & Arrays</u>
 
-<u>Chainlink Variables</u>
+* `allBonds`: Array of all bond addresses ever created
+* `activeBonds`: Array of currently active bond addresses
+* `bondRegistry`: Maps bond address to its BondRecord
+* `issuerToBondIds`: Maps issuer address to their bond IDs
+* `bondIdToAddress`: Maps unique bond ID to contract address
 
-* `jobId`: ID of the Chainlink job for price queries.
-* `fee`: Fee paid for Chainlink requests.
-* `oracle`: Address of the Chainlink oracle.
-* `latestFetchedPrice`: Most recently fetched price from Chainlink.
 </details>
 
 <br>
@@ -303,56 +360,48 @@ The `BondFactory` contract manages the creation and lifecycle of `TokenizedBond`
 
 <u>Constructor</u>
 
-* `constructor()`: Initializes the contract with Chainlink configuration for the Sepolia testnet.
+* `constructor()`: Initializes Chainlink configuration for Sepolia testnet
 
-<u>Bond Management</u>
+<u>Core Factory Operations</u>
 
-* `createTokenizedBond(string memory _name, string memory _symbol, uint256 _id, uint256 _faceValue, uint256 _couponRate, uint256 _couponFrequency, uint256 _maturityDate, address _issuer, address _stablecoinAddress, uint256 _tokensPerBond, uint256 _tokenPrice, uint256 _maxBondSupply)`: Creates a new `TokenizedBond` contract with the specified parameters.
-* `modifyBond(address bondAddress, uint256 _couponRate, uint256 _maturityDate, uint256 _maxBondSupply, uint256 _tokenPrice)`: Modifies parameters of an existing bond.
-* `decommissionBond(address bondAddress)`: Deactivates a bond after all tokens have been redeemed.
+* `createTokenizedBond(...)`: Creates new TokenizedBond contract with specified parameters
+* `decommissionBond(address bondAddress)`: Marks a bond as inactive in registry
 
-<u>Bond Operations</u>
+<u>Chainlink Oracle Operations</u>
 
-* `purchaseBonds(address bondAddress, address investor, uint256 bondAmount)`: Purchases bonds for an investor.
-* `claimCoupon(address bondAddress, address investor)`: Claims coupon payments for an investor.
-* `redeemBonds(address bondAddress, address investor)`: Redeems bonds for an investor after maturity.
-* `mintBond(address bondAddress, address to, uint256 bondAmount)`: Mints new bonds to a specified address.
-* `addToWhitelist(address bondAddress, address[] calldata accounts)`: Adds addresses to the bond's transfer whitelist.
-* `setKycStatus(address bondAddress, address[] calldata accounts, bool approved)`: Sets KYC status for specified accounts.
+* `requestBondPrice(uint256 bondId)`: Requests price update via Chainlink
+* `fulfill(bytes32 _requestId, uint256 _price)`: Callback for Chainlink price updates
+* `withdrawLink()`: Allows owner to withdraw LINK tokens
 
-<u>Chainlink Price Functions</u>
+<u>Basic Registry Views</u>
 
-* `requestBondPrice(uint256 bondId)`: Requests the latest market price for a bond via Chainlink.
-* `fulfill(bytes32 _requestId, uint256 _price)`: Callback function called by Chainlink oracle to fulfill price requests.
-* `withdrawLink()`: Allows withdrawing unused LINK tokens from the contract.
-* `updateBondPrice(uint256 bondId, address bondAddress)`: Updates the price mapping for a bond.
+* `getBondRecord(address)`: Returns basic bond registry information
+* `getBondPricebyId(uint256)`: Returns latest Chainlink price for bond
+* `getBondIssuancePrice(uint256)`: Returns initial issuance price
+* `getTotalBondCount()`: Returns total bonds created
+* `getActiveBondCount()`: Returns number of active bonds
+* `getBondsByIssuer(address)`: Returns all bonds by issuer
+* `isBondActive(address)`: Checks if bond is active
+* `getLatestBond()`: Returns most recent bond address
+* `getBondByIndex(uint256)`: Returns bond address by index
 
-<u>View Functions</u>
+<u>Detailed View Functions</u>
 
-* `getLatestBond()`: Returns the most recently created bond address.
-* `getLatestBondByIssuer(address issuer)`: Returns the most recently created bond by a specific issuer.
-* `getBondByIndex(uint256 index)`: Returns a bond address by its creation index.
-* `getIssuerBondByIndex(address issuer, uint256 index)`: Returns a bond address by issuer and index.
-* `getBondPricebyId(uint256 bondId)`: Returns the price of a bond by its ID.
-* `getBondRecord(address bondAddress)`: Returns a bond record by address.
-* `getTotalBondCount()`: Returns the number of all bonds ever created.
-* `getActiveBondCount()`: Returns the number of active bonds.
-* `getBondsByIssuer(address issuer)`: Returns all bonds created by a specific issuer.
-* `getIssuerBondCount(address issuer)`: Returns the number of bonds created by a specific issuer.
-* `getActiveBondDetails(uint256 index)`: Returns details of an active bond by its index.
-* `isBondActive(address bondAddress)`: Checks if a bond is active.
+* `getActiveBondDetailsByBondId(uint256)`: Returns complete bond details by ID
+* `getBondDetailsByAddress(address)`: Returns complete bond details by address
+
 </details>
 
 <br>
 
-
 <details>
 <summary><strong>Events</strong></summary>
 
-* `TokenizedBondCreated(address indexed bondAddress, string name, string symbol, address indexed issuer)`: Emitted when a new bond is created.
-* `BondDecommissioned(address indexed bondAddress, string name, string symbol, uint256 timestamp)`: Emitted when a bond is decommissioned.
-* `BondModified(address indexed bondAddress, uint256 couponRate, uint256 maturityDate, uint256 maxBondSupply, uint256 tokenPrice)`: Emitted when a bond's parameters are modified.
-* `RequestPrice(bytes32 indexed requestId, uint256 price)`: Emitted when a price is received from Chainlink.
+* `TokenizedBondCreated(address indexed bondAddress, string name, string symbol, address indexed issuer)`
+* `BondDecommissioned(address indexed bondAddress, string name, string symbol, uint256 timestamp)`
+* `BondModified(address indexed bondAddress, uint256 couponRate, uint256 maturityDate, uint256 maxBondSupply, uint256 tokenPrice)`
+* `RequestPrice(bytes32 indexed requestId, uint256 price)`
+
 </details>
 
 <br>
@@ -363,37 +412,23 @@ The `BondFactory` contract manages the creation and lifecycle of `TokenizedBond`
 ```mermaid
 classDiagram
     class BondFactory {
-        +BondRecord[] public allBonds
+        +bytes32 private jobId
+        +uint256 private fee
+        +address private oracle
+        +uint256 public latestFetchedPrice
+        +mapping(uint256 => uint256) bondIdToPrice
+        +mapping(bytes32 => uint256) requestIdToBondId
+        +address[] public allBonds
         +address[] public activeBonds
         +mapping(address => BondRecord) bondRegistry
-        +mapping(address => address[]) issuerToBonds
-        +createTokenizedBond(name, symbol, etc...)
-        +modifyBond(bondAddress, couponRate, etc...)
-        +purchaseBonds(bondAddress, investor, bondAmount)
-        +claimCoupon(bondAddress, investor)
-        +redeemBonds(bondAddress, investor)
-        +decommissionBond(bondAddress)
-        +getLatestBond()
-        +getBondsByIssuer(issuer)
-        +isBondActive(bondAddress)
-    }
-
-    class BondRecord {
-        +address bondAddress
-        +string name
-        +string symbol
-        +bool active
-        +uint256 creationTimestamp
-        +uint256 maturityDate
-        +uint256 decommissionTimestamp
-        +address issuer
-        +uint256 faceValue
-        +uint256 couponRate
-        +uint256 maxBondSupply
-    }
-
-    class TokenizedBond {
-        <<External>>
+        +mapping(address => uint256[]) issuerToBondIds
+        +mapping(uint256 => address) bondIdToAddress
+        +constructor()
+        +createTokenizedBond(...)
+        +decommissionBond(address)
+        +requestBondPrice(uint256)
+        +fulfill(bytes32, uint256)
+        +getBondDetailsByAddress(address)
     }
 
     class ChainlinkClient {
@@ -404,12 +439,15 @@ classDiagram
         <<Interface>>
     }
 
-    BondFactory ..> TokenizedBond : creates
-    BondFactory o-- BondRecord : contains
+    class TokenizedBond {
+        <<External>>
+    }
+
     BondFactory --|> ChainlinkClient : inherits
     BondFactory --|> ConfirmedOwner : inherits
+    BondFactory ..> TokenizedBond : creates
 ```
-</details> 
+</details>
 
 ---
 #### MockStableCoin Contract
@@ -486,45 +524,43 @@ classDiagram
 
 #### BondMarketPlace Contract
 
-The `BondMarketPlace` contract provides a marketplace for listing, trading, and managing tokenized bonds. It offers functionality for bond issuers to list bonds, investors to purchase them, and includes comprehensive market analytics tracking. The contract inherits from OpenZeppelin's `Ownable` contract for access control.
+The `BondMarketPlace` contract provides a marketplace for listing, trading, and managing tokenized bonds. It serves as a central hub for bond trading, offering features like bond listings, price tracking, market analytics, and batch operations for coupon claims and redemptions.
 
 <details>
 <summary><strong>State Variables</strong></summary>
 
-<u>Bond Listing Structure</u>
+<u>Listing Structure</u>
 
 * `BondListing`: Struct containing:
-  * `bondContract`: Reference to the TokenizedBond contract.
-  * `issuer`: Address of the bond issuer.
-  * `listingPrice`: Current price of the bond.
-  * `isListed`: Boolean indicating if the bond is currently listed.
-  * `listingTime`: Timestamp when the bond was listed.
-  * `matured`: Boolean indicating if the bond has matured.
-  * `holders`: Array of addresses that have held this bond.
+  * `bondContract`: Reference to the ITokenizedBond contract
+  * `issuer`: Address of bond issuer
+  * `listingPrice`: Current listing price
+  * `isListed`: Active listing status
+  * `listingTime`: Initial listing timestamp
+  * `matured`: Bond maturity status
+  * `holders`: Historical holders array
 
-<u>Market Analytics Structure</u>
+<u>Analytics Structure</u>
 
 * `MarketAnalytics`: Struct containing:
-  * `lastTradePrice`: Last price at which the bond was traded.
-  * `totalTradingVolume`: Total volume of trading for this bond.
-  * `historicalPrices`: Array of historical trading prices.
-  * `tradingTimes`: Array of timestamps for trades.
-  * `numberOfTrades`: Total number of trades for this bond.
-  * `holderBalances`: Mapping of address to token balance.
-  * `averageHoldingTime`: Average time bonds are held.
-  * `totalValueLocked`: Total value locked in the bond.
+  * `lastTradePrice`: Last price traded at
+  * `totalTradingVolume`: Cumulative trading volume
+  * `historicalPrices`: Array of historical trade prices
+  * `tradingTimes`: Array of trade timestamps
+  * `numberOfTrades`: Total trade count
+  * `holderBalances`: Maps holder address to token balance
+  * `averageHoldingTime`: Average holding duration
+  * `totalValueLocked`: Total value in bond
 
 <u>Registry Mappings</u>
 
-* `bondListings`: Maps bond IDs to their listing information.
-* `bondAnalytics`: Maps bond IDs to their market analytics.
+* `bondListings`: Maps bondId to BondListing
+* `bondAnalytics`: Maps bondId to MarketAnalytics
+* `totalListedBonds`: Count of listed bonds
+* `totalTradingVolume`: Global trading volume
+* `userTradingVolume`: Maps user address to their trading volume
+* `userBondCount`: Maps user address to number of bonds held
 
-<u>Global Statistics</u>
-
-* `totalListedBonds`: Counter of all listed bonds.
-* `totalTradingVolume`: Sum of all trading volume across all bonds.
-* `userTradingVolume`: Maps user addresses to their total trading volume.
-* `userBondCount`: Maps user addresses to the number of bonds they hold.
 </details>
 
 <br>
@@ -532,37 +568,38 @@ The `BondMarketPlace` contract provides a marketplace for listing, trading, and 
 <details>
 <summary><strong>Functions</strong></summary>
 
-<u>Constructor</u>
+<u>Listing Management</u>
 
-* `constructor()`: Initializes the contract and sets the deployer as the owner.
-
-<u>Bond Listing Management</u>
-
-* `listBond(uint256 bondId, ITokenizedBond bondAddress, uint256 price)`: Lists a bond on the marketplace.
-* `modifyListing(uint256 bondId, uint256 newPrice)`: Updates the price of a listed bond.
-* `delistBond(uint256 bondId)`: Removes a bond from the marketplace.
-* `updateBondMaturity(uint256 bondId, bool matured)`: Updates the maturity status of a bond.
+* `listBond(uint256 bondId, ITokenizedBond bondAddress, uint256 price)`: Creates new bond listing
+* `modifyListing(uint256 bondId, uint256 newPrice)`: Updates listing price
+* `delistBond(uint256 bondId)`: Removes bond listing
+* `updateBondMaturity(uint256 bondId, bool matured)`: Updates bond maturity status
 
 <u>Trading Operations</u>
 
-* `purchaseBond(uint256 bondId, uint256 amount)`: Allows users to purchase bonds from the marketplace.
-* `claimCoupon(uint256 bondId)`: Allows bondholders to claim coupon payments.
-* `redeemBond(uint256 bondId)`: Allows bondholders to redeem their bonds upon maturity.
+* `purchaseBond(uint256 bondId, uint256 bondAmount)`: Purchases bonds from primary market
+* `exchangeBonds(uint256 bondId, address from, address to, uint256 tokenAmount, uint256 stablecoinAmount)`: Facilitates P2P trading
 
-<u>Analytics Management</u>
+<u>Coupon Management</u>
 
-* `recordTrade(uint256 bondId, uint256 price)`: Internal function to record trade details.
-* `updateTradeVolume(uint256 bondId, address trader, uint256 amount)`: Internal function to update trading volumes.
-* `calculateVolume24h(uint256 bondId)`: Internal function to calculate 24-hour trading volume.
+* `claimCoupon(uint256 bondId)`: Claims coupon for single holder
+* `batchClaimCoupons(uint256 bondId, address[] calldata claimers)`: Claims coupons for multiple holders
+* `multiClaimCoupons(uint256[] calldata bondIds, address[][] calldata claimers)`: Claims coupons across multiple bonds
 
-<u>View Functions</u>
+<u>Redemption Operations</u>
 
-* `isExistingHolder(uint256 bondId, address holder)`: Checks if an address holds a particular bond.
-* `getBondInfo(uint256 bondId)`: Returns general information about a bond listing.
-* `getAllBondHolders(uint256 bondId)`: Returns an array of all holders for a bond.
-* `getBondMarketMetrics(uint256 bondId)`: Returns key market metrics for a bond.
-* `getUserMetrics(address user)`: Returns metrics about a user's trading activity.
-* `getUserActivePositions(address user)`: Internal function to get a user's active bond positions.
+* `redeemBond(uint256 bondId)`: Redeems matured bonds
+* `batchRedeemBonds(uint256 bondId, address[] calldata redeemers)`: Redeems for multiple holders
+* `multiRedeemBonds(uint256[] calldata bondIds, address[][] calldata redeemers)`: Redeems across multiple bonds
+
+<u>Analytics & View Functions</u>
+
+* `getBondInfo(uint256 bondId)`: Returns basic listing information
+* `getBondMarketMetrics(uint256 bondId)`: Returns market performance metrics
+* `getUserMetrics(address user)`: Returns user trading statistics
+* `getActualUserHoldingsWithDetails(address user)`: Returns detailed bond holdings
+* `getAnalyticsHolderBalance(uint256 bondId, address holder)`: Returns marketplace-tracked balance
+
 </details>
 
 <br>
@@ -570,19 +607,14 @@ The `BondMarketPlace` contract provides a marketplace for listing, trading, and 
 <details>
 <summary><strong>Events</strong></summary>
 
-* `BondListed(uint256 indexed bondId, address indexed issuer, uint256 price)`: Emitted when a bond is listed on the marketplace.
-* `BondDelisted(uint256 indexed bondId, address indexed delister)`: Emitted when a bond is removed from the marketplace.
-* `BondPurchaseRecorded(uint256 indexed bondId, address indexed buyer, uint256 amount)`: Emitted when a bond is purchased.
-* `BondMaturityUpdated(uint256 indexed bondId, bool matured)`: Emitted when a bond's maturity status is updated.
-* `BondRedemptionRecorded(uint256 indexed bondId, address indexed holder, uint256 amount)`: Emitted when a bond is redeemed.
-</details>
+* `BondListed(uint256 indexed bondId, address indexed issuer, uint256 price)`
+* `BondDelisted(uint256 indexed bondId, address indexed delister)`
+* `BondPurchaseRecorded(uint256 indexed bondId, address indexed buyer, uint256 amount)`
+* `BondMaturityUpdated(uint256 indexed bondId, bool matured)`
+* `BondRedemptionRecorded(uint256 indexed bondId, address indexed holder, uint256 amount)`
+* `BondExchanged(uint256 indexed bondId, address indexed from, address indexed to, uint256 tokenAmount, uint256 stablecoinAmount)`
+* `BondGifted(uint256 indexed bondId, address indexed from, address indexed to, uint256 tokenAmount)`
 
-<br>
-
-<details>
-<summary><strong>Modifiers</strong></summary>
-
-* `onlyIssuer(uint256 bondId)`: Restricts function access to the issuer of the specified bond.
 </details>
 
 <br>
@@ -593,20 +625,19 @@ The `BondMarketPlace` contract provides a marketplace for listing, trading, and 
 ```mermaid
 classDiagram
     class BondMarketPlace {
-        +BondListing[] bondListings
-        +MarketAnalytics[] bondAnalytics
+        +mapping(uint256 => BondListing) bondListings
+        +mapping(uint256 => MarketAnalytics) bondAnalytics
         +uint256 totalListedBonds
         +uint256 totalTradingVolume
-        +listBond(bondId, bondAddress, price)
-        +modifyListing(bondId, newPrice)
-        +delistBond(bondId)
-        +purchaseBond(bondId, amount)
-        +claimCoupon(bondId)
-        +redeemBond(bondId)
-        +updateBondMaturity(bondId, matured)
-        +getBondInfo(bondId)
-        +getBondMarketMetrics(bondId)
-        +getUserMetrics(user)
+        +mapping(address => uint256) userTradingVolume
+        +mapping(address => uint256) userBondCount
+        +listBond(uint256, ITokenizedBond, uint256)
+        +purchaseBond(uint256, uint256)
+        +exchangeBonds(uint256, address, address, uint256, uint256)
+        +claimCoupon(uint256)
+        +redeemBond(uint256)
+        +getBondMarketMetrics(uint256)
+        +getUserMetrics(address)
     }
 
     class BondListing {
@@ -625,7 +656,7 @@ classDiagram
         +uint256[] historicalPrices
         +uint256[] tradingTimes
         +uint256 numberOfTrades
-        +mapping holderBalances
+        +mapping(address => uint256) holderBalances
         +uint256 averageHoldingTime
         +uint256 totalValueLocked
     }
@@ -634,15 +665,75 @@ classDiagram
         <<Interface>>
     }
 
-    class ITokenizedBond {
-        <<Interface>>
-    }
-
     BondMarketPlace --|> Ownable : inherits
     BondMarketPlace o-- BondListing : contains
     BondMarketPlace o-- MarketAnalytics : contains
-    BondListing ..> ITokenizedBond : references
-
 ```
+</details>
 
-</details>  
+---
+
+### User Story
+```mermaid
+flowchart LR
+    subgraph Platform["<font size=6>Fractional Bond Trading</font>"]
+        direction LR
+        subgraph "System Deployment"
+            D1[Admin] -->|Deploys| D2["Core Contracts
+            1. MockStableCoin
+            2. BondFactory
+            3. BondMarketplace"]
+            D2 -->|Creates| D3["Bond Instance
+            • Set Parameters
+            • Fund Contract"]
+            D3 -->|Lists| D4[Initial Offerings]
+        end
+
+        subgraph "Investment"
+            A[Investor] -->|Browses| B[Bond Marketplace]
+            B -->|Reviews| C["Bond Details
+            • Price
+            • Coupon Rate
+            • Maturity Date"]
+            C -->|Approves| E["Stablecoin Spend
+            to TokenizedBond"]
+            E -->|Executes| F[Purchase via
+            Marketplace]
+        end
+
+        subgraph "Holding Period"
+            F -->|Holds| G[Position]
+            G -->|Regular| H[Claim Coupons]
+            G -->|Optional| I[Secondary Market]
+            
+            I -->|Trade| J["P2P Exchange
+            1. Approve Tokens
+            2. Set Price
+            3. Execute"]
+            
+            I -->|Gift| K["Gift Transfer
+            1. Approve Tokens
+            2. Execute"]
+        end
+
+        subgraph "Maturity"
+            H & J & K -->|Until| N[Bond Matures]
+            N -->|Redeem| P[Final Payment]
+        end
+    end
+
+    D4 --> B
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style D1 fill:#f9f,stroke:#333,stroke-width:2px
+    style N fill:#bbf,stroke:#333,stroke-width:2px
+    style P fill:#bfb,stroke:#333,stroke-width:2px
+    
+    classDef optional fill:#f96,stroke:#333,stroke-width:1px
+    class I,J,K optional
+    classDef deployment fill:#e6fff2,stroke:#333,stroke-width:1px
+    class D1,D2,D3,D4 deployment
+
+    %% Remove coloring from Platform wrapper
+    style Platform fill:none
+```
