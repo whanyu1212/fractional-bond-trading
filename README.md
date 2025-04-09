@@ -90,7 +90,7 @@ flowchart LR
         UI <--> EJS
     end
 
-    subgraph Blockchain["Ethereum Network (Sepolia Testnet)"]
+    subgraph Blockchain["Ethereum Network"]
         subgraph Contracts["Smart Contracts"]
             BF[BondFactory]
             TB[TokenizedBond]
@@ -788,56 +788,4 @@ flowchart LR
 
     %% Remove coloring from Platform wrapper
     style Platform fill:none
-```
-```mermaid
-flowchart TB
-    subgraph Client["Client Side"]
-        direction TB
-        UI[React Frontend]
-        EJS[Ethers.js]
-        MM[MetaMask]
-        UI <--> EJS
-        EJS <--> MM
-    end
-
-    subgraph Blockchain["Ethereum Network"]
-        direction TB
-        subgraph Contracts["Smart Contracts"]
-            direction LR
-            BF[BondFactory]
-            TB[TokenizedBond]
-            BM[BondMarketPlace]
-            MS[MockStableCoin]
-            
-            BF -->|Creates| TB
-            TB -->|Lists on| BM
-            TB -->|Uses| MS
-            BM -->|Interacts| TB
-        end
-    end
-
-    User[User/Wallet] <--> MM
-    MM <-->|Sign Tx| Blockchain
-    EJS <-->|Read/Write| Contracts
-
-    %% Styling
-    classDef clientSide fill:#e6f3ff,stroke:#333,stroke-width:2px
-    classDef contracts fill:#f5f5f5,stroke:#333,stroke-width:2px
-    classDef user fill:#f9f,stroke:#333,stroke-width:2px
-    
-    class UI,EJS,MM clientSide
-    class BF,TB,BM,MS contracts
-    class User user
-
-    %% User Flow with single arrows and labels
-    User -->|Connects Wallet| UI
-    UI -->|Displays Data| User
-    User -->|Initiates Action| UI
-    UI -->|Sends Tx| EJS
-    EJS -->|Returns Result| UI
-
-    %% Container Styling
-    style Client fill:#f5f9ff,stroke:#333,stroke-width:2px
-    style Blockchain fill:#fff5f5,stroke:#333,stroke-width:2px
-    style Contracts fill:#f5f5f5,stroke:#333,stroke-width:2px
 ```
