@@ -1,0 +1,64 @@
+# OS & Editor
+.DS_Store
+.vscode/
+
+# Node Modules & Package Manager
+node_modules/
+bower_components/
+.npm/
+
+# Environment Files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Process Files
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Build & Distribution
+build/
+
+# React build output
+/build/
+
+# Hardhat / Solidity
+/cache/
+/artifacts/
+ignition/
+ignition/deployments/chain-31337
+
+# TypeChain
+/typechain/
+/typechain-types/
+
+# Solidity Coverage
+/coverage/
+/coverage.json
+
+# Truffle build directory
+build/
+
+# Other Files
+# Lock.js
+# Lock.sol
+
+# add pycache
+*.env
+frontend/.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
