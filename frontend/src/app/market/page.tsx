@@ -1,34 +1,22 @@
 "use client";
 
-import { Toaster } from "@/components/ui/toaster";
-import { Navbar } from "@/components/navbar";
 import { BondCard } from "@/components/bond-card";
 
 export default function Market() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <Toaster />
-      <Navbar />
-      <div className="container mx-auto py-10 px-4">
-        {/* 页面标题 */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 drop-shadow-sm">
-            Market
-          </h1>
-          <p className="mt-4 text-lg text-gray-600">
-            Browse available bonds and manage your trades.
-          </p>
-          <div className="mt-2 w-20 h-1 mx-auto bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 sm:px-6 lg:px-8 py-12">
+      <section className="text-center mb-16">
+        <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 animate-fade-in">
+          Market
+        </h1>
+        <p className="mt-4 text-lg text-muted-foreground max-w-xl mx-auto relative inline-block after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-8 after:h-[2px] after:bg-purple-400 after:rounded-full">
+          Browse available bonds and manage your trades.
+        </p>
+      </section>
 
-        {/* 主体内容 */}
-        <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-200">
-          <h2 className="text-2xl font-semibold text-blue-700 mb-6">
-            Available Bonds
-          </h2>
-          <BondCard />
-        </div>
-      </div>
+      <section>
+        <BondCard />
+      </section>
     </div>
   );
 }

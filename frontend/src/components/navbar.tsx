@@ -1,21 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { prepareContractCall } from "thirdweb";
-import { client } from "@/app/client";
-// import { kaiaTestnet } from "@/chain.config";
-
-import { sepoliaTestnet } from "@/chain.config";
+import Image from "next/image";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { createThirdwebClient } from "thirdweb";
-import { ConnectButton, useActiveAccount, lightTheme} from "thirdweb/react";
-import {
-  inAppWallet,
-  createWallet,
-} from "thirdweb/wallets";
+import { client } from "@/app/client";
+import { ConnectButton, useActiveAccount, lightTheme } from "thirdweb/react";
+import { inAppWallet, createWallet } from "thirdweb/wallets";
 
 const wallets = [
   inAppWallet({
@@ -41,51 +32,61 @@ const wallets = [
 
 export function Navbar() {
   const account = useActiveAccount();
-  const [isClaimLoading, setIsClaimLoading] = useState(false);
   const { toast } = useToast();
-
-
+  const [isClaimLoading, setIsClaimLoading] = useState(false);
 
   return (
-    <div className="flex justify-between items-center mb-6">
-      <div className="flex items-center gap-2">
-  
-        <h1 className="text-2xl font-bold m-0"> Bond Market</h1>
-      </div>
+    <nav className="w-full flex justify-between items-center px-6 py-4 border-b bg-white shadow-sm">
+      {/* Left: Logo */}
+      <Link href="/" className="flex items-center space-x-3">
+        <Image
+          src="/images/logo.png"
+          alt="Crypto Exchange Logo"
+          width={36}
+          height={36}
+          className="rounded-md"
+        />
+        <span className="text-2xl font-semibold text-gray-800">
+          Bond Market
+        </span>
+      </Link>
 
+      {/* Center: Links */}
       <div className="flex items-center gap-6">
-        <Link href="/market" className="text-lg font-medium text-gray-700 hover:text-blue-500">
+        <Link
+          href="/market"
+          className="text-lg font-medium text-gray-700 hover:text-blue-500"
+        >
           Market
         </Link>
-       
-        <Link href="/trade" className="text-lg font-medium text-gray-700 hover:text-blue-500">
+        <Link
+          href="/trade"
+          className="text-lg font-medium text-gray-700 hover:text-blue-500"
+        >
           Trading Center
         </Link>
-
-        <Link href="/account" className="text-lg font-medium text-gray-700 hover:text-blue-500">
+        <Link
+          href="/account"
+          className="text-lg font-medium text-gray-700 hover:text-blue-500"
+        >
           My Account
         </Link>
-        {/* <Link href="/mockcoin" className="text-lg font-medium text-gray-700 hover:text-blue-500">
-          Mock Coin
-        </Link> */}
       </div>
 
-
+      {/* Right: Wallet */}
       <div className="items-center flex gap-2">
-
-        
-      <ConnectButton
-      client={client}
-      wallets={wallets}
-      theme={lightTheme({
-        colors: {
-          accentText: "hsl(216, 46%, 45%)",
-          borderColor: "hsl(262, 11%, 86%)",
-        },
-      })}
-      connectModal={{ size: "wide" }}
-     />
+        <ConnectButton
+          client={client}
+          wallets={wallets}
+          theme={lightTheme({
+            colors: {
+              accentText: "hsl(216, 46%, 45%)",
+              borderColor: "hsl(262, 11%, 86%)",
+            },
+          })}
+          connectModal={{ size: "wide" }}
+        />
       </div>
-    </div>
+    </nav>
   );
 }
