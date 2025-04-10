@@ -21,6 +21,7 @@ A proof of concept implementation of a blockchain-based fractional bond trading 
   - [Flow Diagram](#flow-diagram)
 - [Roadmap](#roadmap)
 - [Contributors](#contributors)
+  - [Repository Statistics](#repository-statistics)
   
 ---
 ## About the Project
@@ -813,11 +814,56 @@ flowchart LR
 ---
 
 ## Roadmap
-
+- [x] Smart Contract Development
+- [x] Frontend Development
+- [x] Testnet Deployment (Sepolia)
+- [ ] Unit tests
+- [ ] Deployment of rebalancing API
+- [ ] Pricing data feed via Chainlink
 ---
 
 ## Contributors
 
-<a href="https://github.com/whanyu1212/fractional-bond-trading/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=whanyu1212/fractional-bond-trading" />
-</a>
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/whanyu1212">
+        <img src="https://avatars.githubusercontent.com/u/107110503?v=4" width="100px;" alt="Hanyu"/>
+        <br />
+        <sub><b>Wu Hanyu</b></sub>
+      </a>
+      <br />
+      <sub>Smart Contract Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/KidultXy">
+        <img src="https://avatars.githubusercontent.com/u/74521938?v=4" width="100px;" alt="Xu Yi"/>
+        <br />
+        <sub><b>Xu Yi</b></sub>
+      </a>
+      <br />
+      <sub>Frontend Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/BB1101">
+        <img src="https://avatars.githubusercontent.com/u/91317427?v=4" width="100px;" alt="Wei Xuan"/>
+        <br />
+        <sub><b>Zhou Runbing</b></sub>
+      </a>
+      <br />
+      <sub>Front End Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/chen-j06">
+        <img src="https://avatars.githubusercontent.com/u/4729824?v=4" width="100px;" alt="Chen Ju"/>
+        <br />
+        <sub><b>Chen Ju</b></sub>
+      </a>
+      <br />
+      <sub>Smart Contract Development</sub>
+    </td>
+  </tr>
+</table>
+
+### Repository Statistics
+![Alt](https://repobeats.axiom.co/api/embed/25a6d78b32d7bec25f48ce52fa58e7a877a34e38.svg "Repobeats analytics image")
