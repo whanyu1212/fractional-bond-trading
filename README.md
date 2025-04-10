@@ -4,7 +4,9 @@ A proof of concept implementation of a blockchain-based fractional bond trading 
 
 <!-- omit in toc -->
 ## Table of Contents
-- [Setup Guide](#setup-guide)
+- [About the Project](#about-the-project)
+- [Built With](#built-with)
+- [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Project Structure](#project-structure)
   - [Installation](#installation)
@@ -16,28 +18,43 @@ A proof of concept implementation of a blockchain-based fractional bond trading 
   - [MockStableCoin Contract](#mockstablecoin-contract)
   - [BondMarketPlace Contract](#bondmarketplace-contract)
 - [User Story](#user-story)
+  - [Flow Diagram](#flow-diagram)
+- [Roadmap](#roadmap)
+- [Contributors](#contributors)
   
 ---
-### Setup Guide
+## About the Project
+This project tries to address key inefficiencies in traditional bond markets, such as high minimum investments, fragmented trading, and slow, costly settlement processes.
+By leveraging blockchain technology, bonds are tokenized into fractional digital assets. This significantly lowers the capital required to invest, opening access to a broader range of investors, including retail participants.
+Furthermore, the platform utilizes smart contracts to automate crucial processes like coupon distribution and potentially trade settlement. This automation reduces reliance on intermediaries, increases transaction speed, lowers operational costs, and contributes to a more efficient and accessible bond market.
 
-This guide will help you set up and run the project locally.
+---
+## Built With
+![Solidity](https://img.shields.io/badge/Solidity-%23363636.svg?style=for-the-badge&logo=solidity&logoColor=white) ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white) ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E) ![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=for-the-badge&logo=Ethereum&logoColor=white)
 
-#### Prerequisites
+
+---
+
+## Getting started
+
+The following guide will help you set up and run the project locally.
+
+### Prerequisites
 
 - [Node.js](https://nodejs.org/en/) (LTS version is recommended)
 - npm (comes with Node.js)
 
-#### Project Structure
+### Project Structure
 
 The repository contains two main parts:
 
 1. **Smart Contract / Backend Code:**  
    Located at the repository root. This part uses Hardhat for blockchain development.
 
-2. **React Frontend:**  
-   Located in the `frontend` folder. This part is a React application created with Create React App.
+2. **Next.js Frontend:**  
+   Located in the `frontend` folder. This part is a Next.js application created with `npx create-next-app@latest`
 
-#### Installation
+### Installation
 
 **1. Clone the Repository**
 
@@ -59,7 +76,7 @@ npm install
 cd ..
 ```
 
-#### Running the project
+### Running the project
 
 **1. Running the smart contract/backend**
 ```bash
@@ -67,26 +84,29 @@ npx hardhat compile
 npx hardhat test
 ```
 
-**2. Running the React Frontend**
+**2. Running the Next.js Frontend**
 ```bash
 cd frontend
-npm start
+npm run dev # assuming it's not productionized
+```
+
+**3. Deploying contracts to testnet (Optional)**
+```bash
+npx hardhat run scripts/<file-name>.js --network sepolia
 ```
 <br>
 
-<u>Remark:</u> Both the root and the React frontend have their own node_modules folders. Make sure you run ```npm install``` in both locations before starting development.
-
-<br>
+<u>Remark:</u> Make sure you sync the dependencies according to what are defined in `package.json` before running the project.
 
 ---
 
-### High Level Architecture
+## High Level Architecture
 
 ```mermaid
 flowchart LR
     subgraph Client["Client Side"]
-        UI[React Frontend]
-        EJS[Ethers.js Library]
+        UI[Next.js Frontend]
+        EJS[Ethers.js and Thirdweb]
         UI <--> EJS
     end
 
@@ -131,7 +151,7 @@ flowchart LR
 ---
 
 
-### Smart Contract Overview
+## Smart Contract Overview
 
 
 ```mermaid
@@ -188,7 +208,7 @@ sequenceDiagram
 ```
 ---
 
-#### TokenizedBond Contract
+### TokenizedBond Contract
 
 The `TokenizedBond` contract is an ERC20 token that represents a bond with a fixed coupon rate and maturity date. It inherits from OpenZeppelin's `ERC20` and `Ownable` contracts, providing token functionality and access control. The contract includes features for bond lifecycle management, fractional ownership, regulatory compliance (KYC and whitelisting), and financial safety.
 
@@ -364,7 +384,7 @@ classDiagram
 
 ---
 
-#### BondFactory Contract
+### BondFactory Contract
 
 The `BondFactory` contract manages the creation and lifecycle of `TokenizedBond` instances. It serves as a factory and registry, providing a centralized interface for interacting with multiple bond contracts. The contract implements Chainlink integration for real-time pricing data.
 
@@ -502,7 +522,7 @@ classDiagram
 </details>
 
 ---
-#### MockStableCoin Contract
+### MockStableCoin Contract
 
 The `MockStableCoin` contract is a simple ERC20 token implementation designed to simulate a stablecoin like USDC for testing purposes. It inherits from OpenZeppelin's `ERC20` and `Ownable` contracts, providing standard token functionality and access control.
 
@@ -574,7 +594,7 @@ classDiagram
 
 ---
 
-#### BondMarketPlace Contract
+### BondMarketPlace Contract
 
 The `BondMarketPlace` contract provides a marketplace for listing, trading, and managing tokenized bonds. It serves as a central hub for bond trading, offering features like bond listings, price tracking, market analytics, and batch operations for coupon claims and redemptions.
 
@@ -725,7 +745,8 @@ classDiagram
 
 ---
 
-### User Story
+## User Story
+### Flow Diagram
 ```mermaid
 flowchart LR
     subgraph Platform["<font size=6>Fractional Bond Trading</font>"]
@@ -738,7 +759,7 @@ flowchart LR
             D2 -->|Creates| D3["Bond Instance
             • Set Parameters
             • Fund Contract"]
-            D3 -->|Lists| D4[Initial Offerings]
+            D3 <-->|Lists/Updates| D4[Initial and Continuous Offerings]
         end
 
         subgraph "Investment"
@@ -789,3 +810,14 @@ flowchart LR
     %% Remove coloring from Platform wrapper
     style Platform fill:none
 ```
+---
+
+## Roadmap
+
+---
+
+## Contributors
+
+<a href="https://github.com/whanyu1212/fractional-bond-trading/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=whanyu1212/fractional-bond-trading" />
+</a>
