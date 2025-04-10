@@ -14,8 +14,6 @@ import {
 } from "@/constants/contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Navbar } from "@/components/navbar";
-import { Toaster } from "@/components/ui/toaster";
 import { toast } from "@/hooks/use-toast";
 
 const DECIMALS = 6;
@@ -106,79 +104,56 @@ export default function TradePage() {
     setTransactionHash(null);
 
     try {
-      console.log("🔍 Wallet address:", account.address);
-      console.log("🧠 Bond index:", selectedBond.index);
-
-      // Get the bond-specific contract address if needed
       const bondAddress = await readContract({
         contract: bondContract,
         method: "function bondIdToAddress(uint256) view returns (address)",
         params: [BigInt(selectedBond.index)],
       });
-      console.log("🏛️ Bond Contract Address:", bondAddress);
 
-      // Get fraction info for token pricing details
       const fractionData = await readContract({
         contract: { ...bondContract, address: bondAddress as `0x${string}` },
         method:
           "function fractionInfo() view returns (uint256,uint256,uint256,uint256)",
         params: [],
       });
+
       const bondInternalTokenPrice = BigInt(fractionData[0]);
       const tokensPerBond = BigInt(fractionData[1]);
       const requiredCost =
         bondInternalTokenPrice * tokensPerBond * BigInt(amount);
-      console.log("💰 Required cost:", requiredCost.toString());
 
-      // First, approve the marketplace to spend your tokens.
-      // NOTE: We now approve the marketplace contract's address.
       const approveTx = prepareContractCall({
         contract: coinContract,
         method: "function approve(address,uint256)",
         params: [bondMarketPlaceContract.address, requiredCost],
       });
+
       await new Promise<void>((resolve, reject) => {
         sendTransaction(approveTx, {
-          onSuccess: (approveReceipt) => {
-            console.log("✅ Approve tx hash:", approveReceipt.transactionHash);
-            resolve();
-          },
+          onSuccess: () => resolve(),
           onError: (error) => {
-            console.error("❌ Approve transaction failed:", error);
-            toast({
-              title: "Approval failed",
-              description: String(error),
-              variant: "destructive",
-            });
+            toast({ title: "Approval failed", description: String(error), variant: "destructive" });
             reject(error);
           },
         });
       });
 
-      // Now, execute the purchase transaction.
       const purchaseTx = prepareContractCall({
         contract: bondMarketPlaceContract,
         method: "function purchaseBond(uint256,uint256)",
         params: [BigInt(selectedBond.index), BigInt(amount)],
       });
+
       await new Promise<void>((resolve, reject) => {
         sendTransaction(purchaseTx, {
-          onSuccess: (purchaseReceipt) => {
-            console.log("✅ Purchase tx receipt:", purchaseReceipt);
-            if (purchaseReceipt.transactionHash) {
-              setTransactionHash(purchaseReceipt.transactionHash);
-            } else {
-              console.warn("Purchase transaction hash not found.");
+          onSuccess: (receipt) => {
+            if (receipt.transactionHash) {
+              setTransactionHash(receipt.transactionHash);
             }
             resolve();
           },
           onError: (error) => {
-            console.error("❌ Purchase transaction failed:", error);
-            toast({
-              title: "Purchase failed",
-              description: String(error),
-              variant: "destructive",
-            });
+            toast({ title: "Purchase failed", description: String(error), variant: "destructive" });
             reject(error);
           },
         });
@@ -186,7 +161,7 @@ export default function TradePage() {
 
       toast({
         title: "Purchase successful",
-        description: (
+        description: transactionHash ? (
           <a
             href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
             target="_blank"
@@ -194,11 +169,11 @@ export default function TradePage() {
           >
             View on Etherscan
           </a>
-        ),
+        ) : undefined,
       });
+
       setPurchaseAmount("");
     } catch (err: any) {
-      console.error("Transaction error:", err);
       toast({
         title: "Error",
         description: err.message || String(err),
@@ -210,74 +185,78 @@ export default function TradePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Toaster />
-      <Navbar />
-      <div className="container mx-auto py-10 px-4">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold text-gray-800">Trade Bonds</h1>
-          <p className="text-gray-600 text-lg mt-2">
-            Select a bond and purchase
-          </p>
-        </div>
-        <div className="max-w-md mx-auto bg-white rounded-xl p-6 shadow-lg border">
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Select Bond
-            </label>
-            <select
-              value={selectedBondIndex}
-              onChange={(e) => setSelectedBondIndex(e.target.value)}
-              className="block w-full p-3 border border-gray-300 rounded-md"
-            >
-              <option value="">-- Choose a Bond --</option>
-              {bonds.map((bond) => (
-                <option key={bond.index} value={bond.index.toString()}>
-                  Bond No.{bond.index} - {bond.price} USDC
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount
-            </label>
-            <Input
-              type="number"
-              min="1"
-              value={purchaseAmount}
-              onChange={(e) => setPurchaseAmount(e.target.value)}
-              placeholder="Enter amount"
-            />
-          </div>
-          <div className="text-sm text-gray-600 mb-4">
-            <strong>Wallet:</strong>{" "}
-            {account?.address
-              ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}`
-              : "Not connected"}
-          </div>
-          <Button
-            onClick={handlePurchase}
-            disabled={isPurchasing || !account}
-            className="w-full"
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 sm:px-6 lg:px-8 py-12">
+      {/* 顶部标题 */}
+      <section className="text-center mb-16">
+        <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 animate-fade-in">
+          Trade Bonds
+        </h1>
+        <p className="mt-4 text-lg text-muted-foreground max-w-xl mx-auto relative inline-block after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-8 after:h-[2px] after:bg-purple-400 after:rounded-full">
+          Select a bond and purchase
+        </p>
+      </section>
+
+      {/* 表单卡片 */}
+      <section className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 border">
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Select Bond
+          </label>
+          <select
+            value={selectedBondIndex}
+            onChange={(e) => setSelectedBondIndex(e.target.value)}
+            className="block w-full p-3 border border-gray-300 rounded-md text-gray-800"
           >
-            {isPurchasing ? "Purchasing..." : "Purchase"}
-          </Button>
-          {transactionHash && (
-            <p className="mt-4 text-xs text-blue-500 break-all">
-              View on Etherscan:{" "}
-              <a
-                href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                {transactionHash}
-              </a>
-            </p>
-          )}
+            <option value="">-- Choose a Bond --</option>
+            {bonds.map((bond) => (
+              <option key={bond.index} value={bond.index.toString()}>
+                Bond #{bond.index} - {bond.price} USDC
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Amount
+          </label>
+          <Input
+            type="number"
+            min="1"
+            value={purchaseAmount}
+            onChange={(e) => setPurchaseAmount(e.target.value)}
+            placeholder="Enter amount"
+          />
+        </div>
+
+        <div className="text-sm text-gray-600 mb-4">
+          <strong>Wallet:</strong>{" "}
+          {account?.address
+            ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}`
+            : "Not connected"}
+        </div>
+
+        <Button
+          onClick={handlePurchase}
+          disabled={isPurchasing || !account}
+          className="w-full"
+        >
+          {isPurchasing ? "Processing..." : "Purchase"}
+        </Button>
+
+        {transactionHash && (
+          <p className="mt-4 text-sm text-blue-600 break-all text-center">
+            <a
+              href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              View Transaction on Etherscan
+            </a>
+          </p>
+        )}
+      </section>
     </div>
   );
 }
