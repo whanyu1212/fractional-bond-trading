@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
 
 const DECIMALS = 6;
 
@@ -186,7 +187,7 @@ export default function TradePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 sm:px-6 lg:px-8 py-12">
-      {/* 顶部标题 */}
+      {/* 标题区 */}
       <section className="text-center mb-16">
         <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 animate-fade-in">
           Trade Bonds
@@ -196,8 +197,9 @@ export default function TradePage() {
         </p>
       </section>
 
-      {/* 表单卡片 */}
-      <section className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 border">
+      {/* 卡片表单 */}
+      <section className="max-w-md mx-auto bg-white/80 backdrop-blur-md border border-white/30 rounded-2xl shadow-2xl p-6">
+        {/* Select Bond */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select Bond
@@ -216,6 +218,18 @@ export default function TradePage() {
           </select>
         </div>
 
+        {/* Bond Info */}
+        {selectedBond && (
+          <div className="text-sm text-gray-600 mb-4 space-y-1">
+            <p><strong>Price:</strong> {selectedBond.price} USDC</p>
+            <p><strong>Listed:</strong> {selectedBond.listingTime}</p>
+            <p><strong>Status:</strong>{" "}
+              {selectedBond.isMatured ? "Matured" : "Active"}
+            </p>
+          </div>
+        )}
+
+        {/* Amount */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Amount
@@ -229,6 +243,15 @@ export default function TradePage() {
           />
         </div>
 
+        {/* Estimated Cost */}
+        {selectedBond && purchaseAmount && (
+          <p className="text-sm text-indigo-600 mb-4">
+            Estimated Cost:{" "}
+            {(selectedBond.price * Number(purchaseAmount)).toFixed(2)} USDC
+          </p>
+        )}
+
+        {/* Wallet */}
         <div className="text-sm text-gray-600 mb-4">
           <strong>Wallet:</strong>{" "}
           {account?.address
@@ -236,14 +259,23 @@ export default function TradePage() {
             : "Not connected"}
         </div>
 
+        {/* Purchase Button */}
         <Button
           onClick={handlePurchase}
           disabled={isPurchasing || !account}
-          className="w-full"
+          className="w-full transition-all duration-150 hover:scale-[1.02]"
         >
-          {isPurchasing ? "Processing..." : "Purchase"}
+          {isPurchasing ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Processing...
+            </span>
+          ) : (
+            "Purchase"
+          )}
         </Button>
 
+        {/* Tx Hash */}
         {transactionHash && (
           <p className="mt-4 text-sm text-blue-600 break-all text-center">
             <a
