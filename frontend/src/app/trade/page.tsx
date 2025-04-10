@@ -133,7 +133,11 @@ export default function TradePage() {
         sendTransaction(approveTx, {
           onSuccess: () => resolve(),
           onError: (error) => {
-            toast({ title: "Approval failed", description: String(error), variant: "destructive" });
+            toast({
+              title: "Approval failed",
+              description: String(error),
+              variant: "destructive",
+            });
             reject(error);
           },
         });
@@ -150,27 +154,50 @@ export default function TradePage() {
           onSuccess: (receipt) => {
             if (receipt.transactionHash) {
               setTransactionHash(receipt.transactionHash);
+
+              toast({
+                title: "🎉 Purchase Successful!",
+                description: (
+                  <div className="space-y-1">
+                    <p className="text-sm">Transaction confirmed on-chain.</p>
+                    <div className="flex items-center gap-2 text-sm">
+                      <a
+                        href={`https://sepolia.etherscan.io/tx/${receipt.transactionHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline"
+                      >
+                        View on Etherscan
+                      </a>
+                      <button
+                        className="text-gray-500 hover:text-gray-800 text-xs"
+                        onClick={() => {
+                          navigator.clipboard.writeText(receipt.transactionHash);
+                          toast({
+                            title: "Copied to clipboard!",
+                            variant: "default",
+                          });
+                        }}
+                        title="Copy"
+                      >
+                        Copy Hash
+                      </button>
+                    </div>
+                  </div>
+                ),
+              });
             }
             resolve();
           },
           onError: (error) => {
-            toast({ title: "Purchase failed", description: String(error), variant: "destructive" });
+            toast({
+              title: "Purchase failed",
+              description: String(error),
+              variant: "destructive",
+            });
             reject(error);
           },
         });
-      });
-
-      toast({
-        title: "Purchase successful",
-        description: transactionHash ? (
-          <a
-            href={`https://sepolia.etherscan.io/tx/${transactionHash}`}
-            target="_blank"
-            className="underline text-blue-600"
-          >
-            View on Etherscan
-          </a>
-        ) : undefined,
       });
 
       setPurchaseAmount("");
@@ -187,7 +214,7 @@ export default function TradePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 sm:px-6 lg:px-8 py-12">
-      {/* 标题区 */}
+      {/* Header */}
       <section className="text-center mb-16">
         <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 animate-fade-in">
           Trade Bonds
@@ -197,9 +224,9 @@ export default function TradePage() {
         </p>
       </section>
 
-      {/* 卡片表单 */}
+      {/* Purchase Form */}
       <section className="max-w-md mx-auto bg-white/80 backdrop-blur-md border border-white/30 rounded-2xl shadow-2xl p-6">
-        {/* Select Bond */}
+        {/* Bond Select */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Select Bond
@@ -229,7 +256,7 @@ export default function TradePage() {
           </div>
         )}
 
-        {/* Amount */}
+        {/* Purchase Amount */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Amount
@@ -251,7 +278,7 @@ export default function TradePage() {
           </p>
         )}
 
-        {/* Wallet */}
+        {/* Wallet Info */}
         <div className="text-sm text-gray-600 mb-4">
           <strong>Wallet:</strong>{" "}
           {account?.address
@@ -275,7 +302,7 @@ export default function TradePage() {
           )}
         </Button>
 
-        {/* Tx Hash */}
+        {/* Transaction Hash */}
         {transactionHash && (
           <p className="mt-4 text-sm text-blue-600 break-all text-center">
             <a
