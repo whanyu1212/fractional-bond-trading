@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { bondMarketPlaceContract } from "@/constants/contract";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useReadContract } from "thirdweb/react";
 import {
   Card,
   CardContent,
@@ -12,6 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Search,
@@ -22,7 +23,6 @@ import {
   LinkIcon,
   Loader2,
 } from "lucide-react";
-import { useReadContract } from "thirdweb/react";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +61,7 @@ export function BondCard() {
 
   useEffect(() => {
     const isPendingStates = bondRequests.map((req) => req.isPending);
-    const allLoaded = !isPendingStates.some((isPending) => isPending);
+    const allLoaded = !isPendingStates.some((p) => p);
 
     if (allLoaded) {
       const bondsList = bondRequests
@@ -84,22 +84,14 @@ export function BondCard() {
       setFilteredBonds(bondsList);
       setLoading(false);
     }
-  }, [bondRequests.map((req) => req.isPending).join()]);
+  }, [bondRequests.map((r) => r.isPending).join()]);
 
   const handleSearch = () => {
-    if (searchIndex === "") {
-      setFilteredBonds(bonds);
-      return;
-    }
-
+    if (searchIndex === "") return setFilteredBonds(bonds);
     const index = parseInt(searchIndex);
-    if (isNaN(index)) {
-      setFilteredBonds([]);
-      return;
-    }
-
-    const foundBond = bonds.find((bond) => bond.index === index);
-    setFilteredBonds(foundBond ? [foundBond] : []);
+    if (isNaN(index)) return setFilteredBonds([]);
+    const found = bonds.find((b) => b.index === index);
+    setFilteredBonds(found ? [found] : []);
   };
 
   const resetSearch = () => {
@@ -113,17 +105,14 @@ export function BondCard() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
+    if (e.key === "Enter") handleSearch();
   };
 
-  const formatAddress = (address: string) => {
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
-  };
+  const formatAddress = (address: string) =>
+    `${address.slice(0, 6)}...${address.slice(-4)}`;
 
   const BondItem = ({ bond }: { bond: Bond }) => (
-    <Card className="w-full mb-4 rounded-2xl shadow-md transition-all hover:shadow-xl">
+    <Card className="w-full rounded-2xl bg-white/80 backdrop-blur-md border border-white/30 shadow-sm hover:shadow-lg hover:scale-[1.01] transition-all duration-200">
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Bond #{bond.index}</CardTitle>
@@ -136,19 +125,23 @@ export function BondCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-2 text-sm text-gray-500">
+        <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
           <div>Issuer</div>
-          <div className="font-semibold text-gray-800 truncate">
+          <div className="font-medium text-gray-800 truncate">
             {formatAddress(bond.issuer)}
           </div>
           <div>Price</div>
-          <div className="font-semibold text-gray-800">{bond.price} USDC</div>
+          <div className="font-medium text-gray-800">{bond.price} USDC</div>
           <div>Total Holders</div>
-          <div className="font-semibold text-gray-800">{bond.totalHolders}</div>
+          <div className="font-medium text-gray-800">{bond.totalHolders}</div>
         </div>
       </CardContent>
       <CardFooter>
-        <Button className="w-full" variant="outline" onClick={() => viewBondDetails(bond)}>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => viewBondDetails(bond)}
+        >
           View Details
         </Button>
       </CardFooter>
@@ -157,6 +150,7 @@ export function BondCard() {
 
   return (
     <div className="w-full max-w-6xl mx-auto p-4">
+      {/* Search */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <div className="relative flex-1">
           <Input
@@ -165,11 +159,11 @@ export function BondCard() {
             value={searchIndex}
             onChange={(e) => setSearchIndex(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="pl-10 rounded-lg bg-gray-100 border border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            className="pl-10 py-3 rounded-full bg-gray-100 border border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
           />
           <Search className="h-4 w-4 absolute left-3 top-3 text-gray-500" />
         </div>
-        <Button className="h-10 bg-blue-600 text-white hover:bg-blue-700" onClick={handleSearch}>
+        <Button className="h-10 bg-indigo-600 text-white hover:bg-indigo-700" onClick={handleSearch}>
           Search
         </Button>
         {searchIndex && (
@@ -179,9 +173,10 @@ export function BondCard() {
         )}
       </div>
 
+      {/* Grid */}
       {loading ? (
-        <div className="w-full flex justify-center items-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="w-full flex justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
         </div>
       ) : filteredBonds.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -190,22 +185,23 @@ export function BondCard() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No bonds found matching your search.</p>
+        <div className="text-center py-16 text-gray-500">
+          No bonds found matching your search.
         </div>
       )}
 
+      {/* Bond Detail Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-white/90 backdrop-blur-md rounded-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
+            <DialogTitle className="flex justify-between items-center">
               <span>Bond Details</span>
               <Badge variant={selectedBond?.isMatured ? "destructive" : "outline"}>
                 {selectedBond?.isMatured ? "Matured" : "Active"}
               </Badge>
             </DialogTitle>
             <DialogDescription>
-              Detailed information about Bond #{selectedBond?.index}
+              Information about Bond #{selectedBond?.index}
             </DialogDescription>
           </DialogHeader>
 
@@ -214,12 +210,12 @@ export function BondCard() {
               <DetailRow icon={<User />} label="Issuer" value={selectedBond.issuer} copy />
               <DetailRow icon={<Calendar />} label="Listing Date" value={selectedBond.listingTime} />
               <DetailRow icon={<DollarSign />} label="Price" value={`${selectedBond.price} USDC`} />
-              <DetailRow icon={<User />} label="Total Holders" value={String(selectedBond.totalHolders)} />
+              <DetailRow icon={<User />} label="Total Holders" value={`${selectedBond.totalHolders}`} />
               <DetailRow icon={<Calendar />} label="Status" value={selectedBond.isMatured ? "Matured" : "Active"} />
             </div>
           )}
 
-          <DialogFooter className="flex justify-between items-center">
+          <DialogFooter className="flex justify-between items-center mt-4">
             <Button variant="outline" asChild>
               <a
                 href={`https://sepolia.etherscan.io/address/${selectedBond?.issuer}`}
@@ -228,7 +224,7 @@ export function BondCard() {
                 className="inline-flex items-center gap-1"
               >
                 <ExternalLink className="h-4 w-4" />
-                View Issuer on Etherscan
+                View on Etherscan
               </a>
             </Button>
             <DialogClose asChild>
@@ -255,15 +251,15 @@ function DetailRow({
   copy?: boolean;
 }) {
   return (
-    <div className="flex items-start space-x-3">
+    <div className="flex items-start space-x-3 text-sm text-gray-700">
       <div className="mt-0.5 text-gray-500">{icon}</div>
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         <p className="font-medium text-sm">{label}</p>
-        <div className="flex items-center space-x-1 break-all text-sm text-gray-700">
+        <div className="flex items-center gap-1 break-all">
           <span>{value}</span>
           {copy && (
             <button
-              className="text-blue-600 hover:text-blue-800"
+              className="text-indigo-600 hover:text-indigo-800"
               onClick={() => navigator.clipboard.writeText(value)}
               title="Copy to clipboard"
             >
