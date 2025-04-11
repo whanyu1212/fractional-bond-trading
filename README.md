@@ -1,5 +1,7 @@
 <!-- omit in toc -->
 # Blockchain-based fractional bond trading
+![Total Commits](https://img.shields.io/github/commit-activity/t/whanyu1212/fractional-bond-trading?label=Total%20Commits&style=for-the-badge) ![Contributors](https://img.shields.io/github/contributors/whanyu1212/fractional-bond-trading?style=for-the-badge) ![Lines Changed](https://img.shields.io/github/commit-activity/m/whanyu1212/fractional-bond-trading?style=for-the-badge) ![Last Commit](https://img.shields.io/github/last-commit/whanyu1212/fractional-bond-trading?style=for-the-badge) ![Issues](https://img.shields.io/github/issues/whanyu1212/fractional-bond-trading?style=for-the-badge) ![Pull Requests](https://img.shields.io/github/issues-pr/whanyu1212/fractional-bond-trading?style=for-the-badge) ![Stars](https://img.shields.io/github/stars/whanyu1212/fractional-bond-trading?style=for-the-badge) ![License](https://img.shields.io/github/license/whanyu1212/fractional-bond-trading?style=for-the-badge)
+
 A proof of concept implementation of a blockchain-based fractional bond trading platform
 
 <!-- omit in toc -->
@@ -18,15 +20,12 @@ A proof of concept implementation of a blockchain-based fractional bond trading 
   - [MockStableCoin Contract](#mockstablecoin-contract)
   - [BondMarketPlace Contract](#bondmarketplace-contract)
 - [User Story](#user-story)
-  - [Flow Diagram](#flow-diagram)
 - [Roadmap](#roadmap)
 - [Contributors](#contributors)
   
 ---
 ## About the Project
-This project tries to address key inefficiencies in traditional bond markets, such as high minimum investments, fragmented trading, and slow, costly settlement processes.
-By leveraging blockchain technology, bonds are tokenized into fractional digital assets. This significantly lowers the capital required to invest, opening access to a broader range of investors, including retail participants.
-Furthermore, the platform utilizes smart contracts to automate crucial processes like coupon distribution and potentially trade settlement. This automation reduces reliance on intermediaries, increases transaction speed, lowers operational costs, and contributes to a more efficient and accessible bond market.
+BondChain is a blockchain-based platform for fractional bond investment employing a hybrid model. It offers decentralized ownership and peer-to-peer exchange of tokenized bond shares (ERC20). However, platform setup, primary market functions facilitated by the BondMarketplace, and administrative control over individual bond parameters (by issuers via the TokenizedBond contract) introduce centralized control points necessary for orchestration, compliance, and lifecycle management.
 
 ---
 ## Built With
@@ -746,7 +745,13 @@ classDiagram
 ---
 
 ## User Story
-### Flow Diagram
+- The `Deployer` (has significant administrative power) establishes the platform by deploying the core contracts onto the network (locally or onto Sepolia): `MockStablecoin` (BCC) for payments, `BondFactory` for managing bond instances' lifecycle, and `BondMarketplace` for listings and user interactions.
+- To simplify the simulation process, the `Deployer` mints a generous amount of mockstablecoins to each participants to ensure that they have enough to fund the tokenizedbond as issuers as well as buying other people's bonds.
+- Each participant (Issuer) then transfers the required funding amount of MockStablecoin into their respective TokenizedBond contract addresses, collateralizing them for future payouts.
+- The participants can list their bonds on the marketplace by calling the `listBond` function in the `BondMarketPlace` contract.
+- Before purchase events happen, the buyer needs to calculate the expected the cost which is tokenAmount * tokenPrice and grant permission (ERC20 approve) to the target TokenizedBond contract address, allowing it to withdraw this calculated cost in MockStablecoin for the purchase to go through.
+- The `BondMarketPlace`'s wrapper purchase function will delegate the execution to TokenizedBond.purchaseFor(Address, Amount) to complete the execution
+- Other functionalities such as claim, redeem and exchange between participants can also be called via the `BondMarketPlace` interface (though they are also wrappers afterall)
 ```mermaid
 flowchart LR
     subgraph Platform["<font size=6>Fractional Bond Trading</font>"]
@@ -780,13 +785,13 @@ flowchart LR
             G -->|Optional| I[Secondary Market]
             
             I -->|Trade| J["P2P Exchange
-            1. Approve Tokens
-            2. Set Price
-            3. Execute"]
+            4. Approve Tokens
+            5. Set Price
+            6. Execute"]
             
             I -->|Gift| K["Gift Transfer
-            1. Approve Tokens
-            2. Execute"]
+            7. Approve Tokens
+            8. Execute"]
         end
 
         subgraph "Maturity"
@@ -813,11 +818,69 @@ flowchart LR
 ---
 
 ## Roadmap
-
+- [x] Smart Contract Development
+- [x] Frontend Development
+- [x] Testnet Deployment (Sepolia)
+- [x] Presentation slides using slidev
+- [ ] Improve unit test coverage
+- [ ] Functionalities for depositing
+- [ ] Deployment of rebalancing API
+- [ ] Realistic pricing data feed via Chainlink
 ---
 
 ## Contributors
+Disclaimer: The charts below are updated manually for now without setting up github actions.
 
-<a href="https://github.com/whanyu1212/fractional-bond-trading/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=whanyu1212/fractional-bond-trading" />
-</a>
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/whanyu1212">
+        <img src="https://avatars.githubusercontent.com/u/107110503?v=4" width="100px;" alt="Hanyu"/>
+        <br />
+        <sub><b>Wu Hanyu</b></sub>
+      </a>
+      <br />
+      <sub>Smart Contract Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/KidultXy">
+        <img src="https://avatars.githubusercontent.com/u/74521938?v=4" width="100px;" alt="Xu Yi"/>
+        <br />
+        <sub><b>Xu Yi</b></sub>
+      </a>
+      <br />
+      <sub>Frontend Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/BB1101">
+        <img src="https://avatars.githubusercontent.com/u/91317427?v=4" width="100px;" alt="Zhou Runbing"/>
+        <br />
+        <sub><b>Zhou Runbing</b></sub>
+      </a>
+      <br />
+      <sub>Front End Development</sub>
+    </td>
+    <td align="center">
+      <a href="https://github.com/chen-j06">
+        <img src="https://avatars.githubusercontent.com/u/4729824?v=4" width="100px;" alt="Chen Ju"/>
+        <br />
+        <sub><b>Chen Ju</b></sub>
+      </a>
+      <br />
+      <sub>Smart Contract Development</sub>
+    </td>
+  </tr>
+</table>
+
+
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;">
+  <div style="flex: 1; min-width: 450px;">
+    <h3>Commit Distribution</h3>
+    <img src="https://quickchart.io/chart?c={type:'bar',data:{labels:['whanyu1212','BB1101','KidultXy','chen-j06'],datasets:[{label:'Commits',backgroundColor:'rgba(54,162,235,0.8)',data:[76,17,7,6]}]},options:{plugins:{title:{display:true,text:'Repository Commits by Contributor'},legend:{display:false}},scales:{y:{beginAtZero:true}}}}" width="100%" alt="Commit Distribution" />
+  </div>
+  <div style="flex: 1; min-width: 450px;">
+    <h3>Lines Changed</h3>
+    <img src="https://quickchart.io/chart?c={type:'bar',data:{labels:['whanyu1212','KidultXy','BB1101','chen-j06'],datasets:[{label:'Lines Added',backgroundColor:'rgba(75,192,192,0.8)',data:[40082,42856,2480,2781]},{label:'Lines Deleted',backgroundColor:'rgba(255,99,132,0.8)',data:[20603,19640,365,198]}]},options:{plugins:{title:{display:true,text:'Code Changes by Contributor'}},scales:{y:{beginAtZero:true}}}}" width="100%" alt="Lines Changed" />
+  </div>
+</div>

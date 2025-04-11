@@ -212,9 +212,11 @@ async function main() {
         } catch (e) { console.log("  Could not get totalSupply (maybe not implemented or needs different params).") }
 
         // factory takes care of registry, so we can call it directly to get details
-        const bondDetails = await bondFactory.getBondDetailsByAddress(firstBondAddress);
+        // const bondDetails = await bondFactory.getBondDetailsByAddress(firstBondAddress);
         // alternatively, you can use the bondId to get details
-        // const bondDetails = await bondFactory.getActiveBondDetailsByBondId(firstBondId);
+        console.log(`\nBond ID Type: ${typeof firstBondId}`); 
+        const bondDetails = await bondFactory.getActiveBondDetailsByBondId(firstBondId);
+        console.log(bondDetails);   
 
         const issuerAddress = bondDetails.issuer; // Get issuer from contract state
         const issuerBalance = await firstBondInstance.balanceOf(issuerAddress);
@@ -874,324 +876,324 @@ async function main() {
     console.log("====================================================");
 
     //===========================================================================================================
-    // console.log("\n=== Simulating Time Passing for Coupon Payments ===");
+    console.log("\n=== Simulating Time Passing for Coupon Payments ===");
 
-    // const sixMonthsOneDay = (183 * 24 * 60 * 60); // Approx 6 months in seconds + 1 day buffer
-    // console.log(`Advancing time by ~6 months (${sixMonthsOneDay} seconds)...`);
+    const sixMonthsOneDay = (183 * 24 * 60 * 60); // Approx 6 months in seconds + 1 day buffer
+    console.log(`Advancing time by ~6 months (${sixMonthsOneDay} seconds)...`);
 
-    // await time.increase(sixMonthsOneDay);
+    await time.increase(sixMonthsOneDay);
 
-    // // The new timestamp after advancing time for 6 months and 1 day
-    // const newTimestamp = await time.latest();
+    // The new timestamp after advancing time for 6 months and 1 day
+    const newTimestamp = await time.latest();
 
-    // console.log(`✅ Time advanced. Current block timestamp: ${newTimestamp}`);
-    // console.log("====================================================");
+    console.log(`✅ Time advanced. Current block timestamp: ${newTimestamp}`);
+    console.log("====================================================");
 
-    // console.log("\n=== Claiming Coupons via Marketplace (multiClaimCoupons) ===");
+    console.log("\n=== Claiming Coupons via Marketplace (multiClaimCoupons) ===");
 
-    // // --- 1. Identify Potential Claimers and Bonds ---
-    // const bondIdsToClaimFor = [];
-    // const claimersPerBond = []; // Array of arrays: address[][]
-    // const claimerStablecoinBefore = {}; // Track balances before { address: balance }
+    // --- 1. Identify Potential Claimers and Bonds ---
+    const bondIdsToClaimFor = [];
+    const claimersPerBond = []; // Array of arrays: address[][]
+    const claimerStablecoinBefore = {}; // Track balances before { address: balance }
 
-    // console.log("Identifying current bond holders to attempt claims...");
-    // for (let i = 0; i < playerSigners.length; i++) {
-    //     const player = playerSigners[i];
-    //     try {
-    //         const holdings = await bondMarketplace.getActualUserHoldingsWithDetails(player.address);
-    //         const [heldBondIds, , balances] = holdings; // We only need IDs and confirmation of balance>0
+    console.log("Identifying current bond holders to attempt claims...");
+    for (let i = 0; i < playerSigners.length; i++) {
+        const player = playerSigners[i];
+        try {
+            const holdings = await bondMarketplace.getActualUserHoldingsWithDetails(player.address);
+            const [heldBondIds, , balances] = holdings; // We only need IDs and confirmation of balance>0
 
-    //         for (let k = 0; k < heldBondIds.length; k++) {
-    //             const bondId = heldBondIds[k];
-    //             const balance = balances[k];
+            for (let k = 0; k < heldBondIds.length; k++) {
+                const bondId = heldBondIds[k];
+                const balance = balances[k];
 
-    //             if (balance > 0n) { // If player actually holds tokens for this bond
-    //                 const bondIdStr = bondId.toString();
-    //                 // Find the index for this bondId in our arrays
-    //                 let bondIndex = bondIdsToClaimFor.findIndex(id => id === bondId);
+                if (balance > 0n) { // If player actually holds tokens for this bond
+                    const bondIdStr = bondId.toString();
+                    // Find the index for this bondId in our arrays
+                    let bondIndex = bondIdsToClaimFor.findIndex(id => id === bondId);
 
-    //                 if (bondIndex === -1) {
-    //                     // If this bondId isn't in our list yet, add it
-    //                     bondIdsToClaimFor.push(bondId);
-    //                     claimersPerBond.push([]); // Add an empty array for its claimers
-    //                     bondIndex = bondIdsToClaimFor.length - 1; // Get the new index
-    //                 }
+                    if (bondIndex === -1) {
+                        // If this bondId isn't in our list yet, add it
+                        bondIdsToClaimFor.push(bondId);
+                        claimersPerBond.push([]); // Add an empty array for its claimers
+                        bondIndex = bondIdsToClaimFor.length - 1; // Get the new index
+                    }
 
-    //                 // Add this player to the list of claimers for this bond
-    //                 if (!claimersPerBond[bondIndex].includes(player.address)) {
-    //                     claimersPerBond[bondIndex].push(player.address);
-    //                      console.log(`  -> Marked Player ${i+1} (${player.address}) to claim for Bond ID ${bondId}`);
+                    // Add this player to the list of claimers for this bond
+                    if (!claimersPerBond[bondIndex].includes(player.address)) {
+                        claimersPerBond[bondIndex].push(player.address);
+                         console.log(`  -> Marked Player ${i+1} (${player.address}) to claim for Bond ID ${bondId}`);
 
-    //                     // Store stablecoin balance before claim
-    //                      if (!claimerStablecoinBefore[player.address]) {
-    //                         claimerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
-    //                      }
-    //                 }
-    //             }
-    //         }
-    //     } catch (error) {
-    //         console.error(`  Error identifying holdings for Player ${i+1}: ${error}`);
-    //     }
-    // }
+                        // Store stablecoin balance before claim
+                         if (!claimerStablecoinBefore[player.address]) {
+                            claimerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
+                         }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`  Error identifying holdings for Player ${i+1}: ${error}`);
+        }
+    }
 
-    // // --- 2. Check if there's anything to claim ---
-    // if (bondIdsToClaimFor.length === 0) {
-    //     console.log("\nNo holders identified with positive balances. Skipping multiClaimCoupons call.");
-    // } else {
-    //     console.log("\n--- Prepared Data for multiClaimCoupons ---");
-    //     console.log("Bond IDs:", bondIdsToClaimFor.map(id => id.toString()));
+    // --- 2. Check if there's anything to claim ---
+    if (bondIdsToClaimFor.length === 0) {
+        console.log("\nNo holders identified with positive balances. Skipping multiClaimCoupons call.");
+    } else {
+        console.log("\n--- Prepared Data for multiClaimCoupons ---");
+        console.log("Bond IDs:", bondIdsToClaimFor.map(id => id.toString()));
 
-    //     // --- 3. Call multiClaimCoupons ---
-    //     console.log("\nCalling multiClaimCoupons on marketplace...");
-    //     try {
-    //         // Use deployer or any player to initiate the call
-    //         const claimTx = await bondMarketplace.connect(deployer).multiClaimCoupons(
-    //             bondIdsToClaimFor,
-    //             claimersPerBond
-    //         );
-    //         const claimReceipt = await claimTx.wait();
-    //         console.log(`✅ multiClaimCoupons transaction successful! Gas used: ${claimReceipt.gasUsed.toString()}`);
+        // --- 3. Call multiClaimCoupons ---
+        console.log("\nCalling multiClaimCoupons on marketplace...");
+        try {
+            // Use deployer or any player to initiate the call
+            const claimTx = await bondMarketplace.connect(deployer).multiClaimCoupons(
+                bondIdsToClaimFor,
+                claimersPerBond
+            );
+            const claimReceipt = await claimTx.wait();
+            console.log(`✅ multiClaimCoupons transaction successful! Gas used: ${claimReceipt.gasUsed.toString()}`);
 
-    //         // --- 4. Log Results from Transaction ---
-    //         console.log("\n--- Verifying Stablecoin Balances After Claim ---");
-    //         for (const playerAddress in claimerStablecoinBefore) {
-    //             const balanceBefore = claimerStablecoinBefore[playerAddress];
-    //             const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
-    //             const difference = balanceAfter - balanceBefore;
+            // --- 4. Log Results from Transaction ---
+            console.log("\n--- Verifying Stablecoin Balances After Claim ---");
+            for (const playerAddress in claimerStablecoinBefore) {
+                const balanceBefore = claimerStablecoinBefore[playerAddress];
+                const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
+                const difference = balanceAfter - balanceBefore;
 
-    //             console.log(`  Player ${playerAddress}:`);
-    //             console.log(`    Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //             console.log(`    Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //             if (difference > 0n) {
-    //                 console.log(`    💰 Received: ${ethers.formatUnits(difference, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //             } else {
-    //                  console.log(`    (No change or potential issue)`);
-    //             }
-    //         }
+                console.log(`  Player ${playerAddress}:`);
+                console.log(`    Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
+                console.log(`    Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
+                if (difference > 0n) {
+                    console.log(`    💰 Received: ${ethers.formatUnits(difference, stablecoinDecimals)} ${stablecoinSymbol}`);
+                } else {
+                     console.log(`    (No change or potential issue)`);
+                }
+            }
 
-    //     } catch (error) {
-    //         console.error(`  ❌ Error calling multiClaimCoupons:`, error.reason || error);
-    //         if (!error.reason) console.error(error);
-    //     }
-    // }
-    // console.log("\n--- Coupon Claims Complete ---");
-    // console.log("====================================================");
+        } catch (error) {
+            console.error(`  ❌ Error calling multiClaimCoupons:`, error.reason || error);
+            if (!error.reason) console.error(error);
+        }
+    }
+    console.log("\n--- Coupon Claims Complete ---");
+    console.log("====================================================");
 
     //===========================================================================================================
-    // console.log("\n=== Simulating Time Passing to Bond Maturity ===");
+    console.log("\n=== Simulating Time Passing to Bond Maturity ===");
 
-    // // Advance time significantly further to ensure most/all bonds mature.
-    // // If the longest maturity was ~3 years from creation, let's add ~3 more years.
-    // const threeYears = (3 * 365 * 24 * 60 * 60); // Approx seconds
-    // console.log(`Advancing time by ~3 more years (${threeYears} seconds)...`);
+    // Advance time significantly further to ensure most/all bonds mature.
+    // If the longest maturity was ~3 years from creation, let's add ~3 more years.
+    const threeYears = (3 * 365 * 24 * 60 * 60); // Approx seconds
+    console.log(`Advancing time by ~3 more years (${threeYears} seconds)...`);
 
-    // await time.increase(threeYears);
+    await time.increase(threeYears);
 
-    // const maturityCheckTimestamp = await time.latest();
-    // console.log(`✅ Time advanced. Current block timestamp for maturity check: ${maturityCheckTimestamp}`);
-    // console.log("====================================================");
+    const maturityCheckTimestamp = await time.latest();
+    console.log(`✅ Time advanced. Current block timestamp for maturity check: ${maturityCheckTimestamp}`);
+    console.log("====================================================");
 
-    // //===========================================================================================================
-    // // === UPDATING BOND MATURITY STATUS ON MARKETPLACE ===
-    // console.log("\n=== Updating Bond Maturity Status on Marketplace ===");
+    //===========================================================================================================
+    // === UPDATING BOND MATURITY STATUS ON MARKETPLACE ===
+    console.log("\n=== Updating Bond Maturity Status on Marketplace ===");
 
-    // const maturedBondIds = []; // Keep track of IDs marked as matured
+    const maturedBondIds = []; // Keep track of IDs marked as matured
 
-    // // Iterate through all created bonds
-    // for (const bondIdStr in createdBondInstances) {
-    //     const bondId = BigInt(bondIdStr);
-    //     const creationDetails = bondCreationDetails[bondIdStr]; // Fetch stored details
+    // Iterate through all created bonds
+    for (const bondIdStr in createdBondInstances) {
+        const bondId = BigInt(bondIdStr);
+        const creationDetails = bondCreationDetails[bondIdStr]; // Fetch stored details
 
-    //     if (!creationDetails || !creationDetails.maturityDate) {
-    //         console.log(`  Skipping Bond ID ${bondId}: Maturity date not found in script storage.`);
-    //         continue;
-    //     }
+        if (!creationDetails || !creationDetails.maturityDate) {
+            console.log(`  Skipping Bond ID ${bondId}: Maturity date not found in script storage.`);
+            continue;
+        }
 
-    //     const maturityDate = creationDetails.maturityDate;
+        const maturityDate = creationDetails.maturityDate;
 
-    //     // Check if current time is past the bond's maturity date
-    //     if (maturityCheckTimestamp >= maturityDate) {
-    //         console.log(`\n  Bond ID ${bondId} has matured (Maturity: ${maturityDate}, Current: ${maturityCheckTimestamp}).`);
-    //         console.log(`  Attempting to update status on marketplace via deployer (${deployer.address})...`);
+        // Check if current time is past the bond's maturity date
+        if (maturityCheckTimestamp >= maturityDate) {
+            console.log(`\n  Bond ID ${bondId} has matured (Maturity: ${maturityDate}, Current: ${maturityCheckTimestamp}).`);
+            console.log(`  Attempting to update status on marketplace via deployer (${deployer.address})...`);
 
-    //         try {
-    //              // Check current status first (optional)
-    //              const listingBefore = await bondMarketplace.bondListings(bondId);
-    //              if (listingBefore.matured) {
-    //                  console.log(`    Status already marked as matured on marketplace.`);
-    //                  maturedBondIds.push(bondId); // Still add to our list
-    //                  continue;
-    //              }
+            try {
+                 // Check current status first (optional)
+                 const listingBefore = await bondMarketplace.bondListings(bondId);
+                 if (listingBefore.matured) {
+                     console.log(`    Status already marked as matured on marketplace.`);
+                     maturedBondIds.push(bondId); // Still add to our list
+                     continue;
+                 }
 
-    //             // Call updateBondMaturity as the deployer (marketplace owner)
-    //             const updateTx = await bondMarketplace.connect(deployer).updateBondMaturity(
-    //                 bondId,
-    //                 true // Set matured status to true
-    //             );
-    //             await updateTx.wait();
-    //             console.log(`  ✅ Marketplace status updated for Bond ID ${bondId}.`);
-    //             maturedBondIds.push(bondId); // Add to list of successfully updated bonds
+                // Call updateBondMaturity as the deployer (marketplace owner)
+                const updateTx = await bondMarketplace.connect(deployer).updateBondMaturity(
+                    bondId,
+                    true // Set matured status to true
+                );
+                await updateTx.wait();
+                console.log(`  ✅ Marketplace status updated for Bond ID ${bondId}.`);
+                maturedBondIds.push(bondId); // Add to list of successfully updated bonds
 
-    //             // Verify marketplace state (optional)
-    //             const listingAfter = await bondMarketplace.bondListings(bondId);
-    //             if (!listingAfter.matured) {
-    //                  console.warn(`  ⚠️ Verification failed: Marketplace status did not update for Bond ID ${bondId}.`);
-    //             }
+                // Verify marketplace state (optional)
+                const listingAfter = await bondMarketplace.bondListings(bondId);
+                if (!listingAfter.matured) {
+                     console.warn(`  ⚠️ Verification failed: Marketplace status did not update for Bond ID ${bondId}.`);
+                }
 
-    //         } catch (error) {
-    //             console.error(`  ❌ Error updating maturity status for Bond ID ${bondId}:`, error.reason || error);
-    //         }
-    //     } else {
-    //         console.log(`  Bond ID ${bondId} has not matured yet.`);
-    //     }
-    // }
-    // console.log(`\n--- Maturity Status Update Complete: ${maturedBondIds.length} bonds marked as matured ---`);
-    // console.log("====================================================");
+            } catch (error) {
+                console.error(`  ❌ Error updating maturity status for Bond ID ${bondId}:`, error.reason || error);
+            }
+        } else {
+            console.log(`  Bond ID ${bondId} has not matured yet.`);
+        }
+    }
+    console.log(`\n--- Maturity Status Update Complete: ${maturedBondIds.length} bonds marked as matured ---`);
+    console.log("====================================================");
 
     //===========================================================================================================
     // === REDEEMING BONDS ===
-    // console.log("\n=== Redeeming Bonds via Marketplace (multiRedeemBonds) ===");
+    console.log("\n=== Redeeming Bonds via Marketplace (multiRedeemBonds) ===");
 
-    // // --- 1. Identify Potential Redeemers for Matured Bonds ---
-    // const bondIdsToRedeemFor = [];
-    // const redeemersPerBond = []; // Array of arrays: address[][]
-    // const redeemerStablecoinBefore = {}; // Track balances before { address: balance }
-    // const expectedPayouts = {}; // Track expected payout { address: totalPayout }
-    // const bondsBeingRedeemed = {}; // Track bonds being redeemed { bondId: { faceValue: X, tokensPerBond: Y } }
+    // --- 1. Identify Potential Redeemers for Matured Bonds ---
+    const bondIdsToRedeemFor = [];
+    const redeemersPerBond = []; // Array of arrays: address[][]
+    const redeemerStablecoinBefore = {}; // Track balances before { address: balance }
+    const expectedPayouts = {}; // Track expected payout { address: totalPayout }
+    const bondsBeingRedeemed = {}; // Track bonds being redeemed { bondId: { faceValue: X, tokensPerBond: Y } }
 
-    // console.log("Identifying holders of matured bonds to attempt redemptions...");
+    console.log("Identifying holders of matured bonds to attempt redemptions...");
 
-    // // Only loop through bonds confirmed as matured on the marketplace
-    // for (const bondId of maturedBondIds) {
-    //     const bondIdStr = bondId.toString();
-    //     const bondInstance = createdBondInstances[bondIdStr];
-    //     const creationDetails = bondCreationDetails[bondIdStr];
+    // Only loop through bonds confirmed as matured on the marketplace
+    for (const bondId of maturedBondIds) {
+        const bondIdStr = bondId.toString();
+        const bondInstance = createdBondInstances[bondIdStr];
+        const creationDetails = bondCreationDetails[bondIdStr];
 
-    //     if (!bondInstance || !creationDetails || !creationDetails.faceValue || !creationDetails.tokensPerBond) {
-    //          console.warn(`  Skipping Bond ID ${bondId}: Instance or creation details (faceValue, tokensPerBond) missing.`);
-    //          continue;
-    //     }
-    //     const faceValue = creationDetails.faceValue;
-    //     const tokensPerBond = creationDetails.tokensPerBond;
-    //     bondsBeingRedeemed[bondIdStr] = { faceValue, tokensPerBond }; // Store for payout calculation
+        if (!bondInstance || !creationDetails || !creationDetails.faceValue || !creationDetails.tokensPerBond) {
+             console.warn(`  Skipping Bond ID ${bondId}: Instance or creation details (faceValue, tokensPerBond) missing.`);
+             continue;
+        }
+        const faceValue = creationDetails.faceValue;
+        const tokensPerBond = creationDetails.tokensPerBond;
+        bondsBeingRedeemed[bondIdStr] = { faceValue, tokensPerBond }; // Store for payout calculation
 
-    //     let foundHoldersForThisBond = false;
-    //     const currentRedeemers = [];
+        let foundHoldersForThisBond = false;
+        const currentRedeemers = [];
 
-    //     // Find all current holders for this specific matured bond
-    //     for (let i = 0; i < playerSigners.length; i++) {
-    //         const player = playerSigners[i];
-    //         try {
-    //             const balance = await bondInstance.balanceOf(player.address);
+        // Find all current holders for this specific matured bond
+        for (let i = 0; i < playerSigners.length; i++) {
+            const player = playerSigners[i];
+            try {
+                const balance = await bondInstance.balanceOf(player.address);
 
-    //             if (balance > 0n) { // If player holds tokens for this matured bond
-    //                 foundHoldersForThisBond = true;
-    //                 currentRedeemers.push(player.address);
-    //                 console.log(`  -> Marked Player ${i+1} (${player.address}) to redeem ${balance.toString()} tokens for Bond ID ${bondId}`);
+                if (balance > 0n) { // If player holds tokens for this matured bond
+                    foundHoldersForThisBond = true;
+                    currentRedeemers.push(player.address);
+                    console.log(`  -> Marked Player ${i+1} (${player.address}) to redeem ${balance.toString()} tokens for Bond ID ${bondId}`);
 
-    //                 // Store stablecoin balance before redemption
-    //                 if (!redeemerStablecoinBefore[player.address]) {
-    //                     redeemerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
-    //                 }
-    //                 // Calculate expected payout for this redemption
-    //                 // Payout = (Fractional Tokens Redeemed * Face Value per Whole Bond) / Tokens per Whole Bond
-    //                 const payout = (balance * faceValue) / tokensPerBond; // BigInt arithmetic
-    //                 if (!expectedPayouts[player.address]) {
-    //                     expectedPayouts[player.address] = 0n;
-    //                 }
-    //                 expectedPayouts[player.address] += payout; // Accumulate expected payout
-    //             }
-    //         } catch (balanceError) {
-    //              console.error(`  Error checking balance for Player ${i+1} on Bond ID ${bondId}: ${balanceError}`);
-    //         }
-    //     }
+                    // Store stablecoin balance before redemption
+                    if (!redeemerStablecoinBefore[player.address]) {
+                        redeemerStablecoinBefore[player.address] = await mockStablecoin.balanceOf(player.address);
+                    }
+                    // Calculate expected payout for this redemption
+                    // Payout = (Fractional Tokens Redeemed * Face Value per Whole Bond) / Tokens per Whole Bond
+                    const payout = (balance * faceValue) / tokensPerBond; // BigInt arithmetic
+                    if (!expectedPayouts[player.address]) {
+                        expectedPayouts[player.address] = 0n;
+                    }
+                    expectedPayouts[player.address] += payout; // Accumulate expected payout
+                }
+            } catch (balanceError) {
+                 console.error(`  Error checking balance for Player ${i+1} on Bond ID ${bondId}: ${balanceError}`);
+            }
+        }
 
-    //     // If holders were found for this matured bond, add it to the batch call arrays
-    //     if (foundHoldersForThisBond) {
-    //         bondIdsToRedeemFor.push(bondId);
-    //         redeemersPerBond.push(currentRedeemers);
-    //     }
-    // } // End loop through maturedBondIds
+        // If holders were found for this matured bond, add it to the batch call arrays
+        if (foundHoldersForThisBond) {
+            bondIdsToRedeemFor.push(bondId);
+            redeemersPerBond.push(currentRedeemers);
+        }
+    } // End loop through maturedBondIds
 
-    // // --- 2. Check if there's anything to redeem ---
-    // if (bondIdsToRedeemFor.length === 0) {
-    //     console.log("\nNo holders identified for matured bonds. Skipping multiRedeemBonds call.");
-    // } else {
-    //     console.log("\n--- Prepared Data for multiRedeemBonds ---");
-    //     console.log("Bond IDs:", bondIdsToRedeemFor.map(id => id.toString()));
-    //     console.log("Redeemers per Bond:", redeemersPerBond); //
+    // --- 2. Check if there's anything to redeem ---
+    if (bondIdsToRedeemFor.length === 0) {
+        console.log("\nNo holders identified for matured bonds. Skipping multiRedeemBonds call.");
+    } else {
+        console.log("\n--- Prepared Data for multiRedeemBonds ---");
+        console.log("Bond IDs:", bondIdsToRedeemFor.map(id => id.toString()));
+        console.log("Redeemers per Bond:", redeemersPerBond); //
 
-    //     // --- 3. Call multiRedeemBonds ---
-    //     console.log("\nCalling multiRedeemBonds on marketplace...");
-    //     try {
-    //         // Use deployer or any player to initiate the call
-    //         const redeemTx = await bondMarketplace.connect(deployer).multiRedeemBonds(
-    //             bondIdsToRedeemFor,
-    //             redeemersPerBond
-    //         );
-    //         const redeemReceipt = await redeemTx.wait();
-    //         console.log(`✅ multiRedeemBonds transaction successful! Gas used: ${redeemReceipt.gasUsed.toString()}`);
+        // --- 3. Call multiRedeemBonds ---
+        console.log("\nCalling multiRedeemBonds on marketplace...");
+        try {
+            // Use deployer or any player to initiate the call
+            const redeemTx = await bondMarketplace.connect(deployer).multiRedeemBonds(
+                bondIdsToRedeemFor,
+                redeemersPerBond
+            );
+            const redeemReceipt = await redeemTx.wait();
+            console.log(`✅ multiRedeemBonds transaction successful! Gas used: ${redeemReceipt.gasUsed.toString()}`);
 
-    //         // --- 4. Verify Results ---
-    //         console.log("\n--- Verifying Balances After Redemption ---");
+            // --- 4. Verify Results ---
+            console.log("\n--- Verifying Balances After Redemption ---");
 
-    //         // Verify Stablecoin Balances of Redeemers
-    //         console.log("  Verifying Redeemer Stablecoin Balances:");
-    //         for (const playerAddress in redeemerStablecoinBefore) {
-    //             const balanceBefore = redeemerStablecoinBefore[playerAddress];
-    //             const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
-    //             const expectedPayout = expectedPayouts[playerAddress] || 0n;
-    //             const expectedBalanceAfter = balanceBefore + expectedPayout;
+            // Verify Stablecoin Balances of Redeemers
+            console.log("  Verifying Redeemer Stablecoin Balances:");
+            for (const playerAddress in redeemerStablecoinBefore) {
+                const balanceBefore = redeemerStablecoinBefore[playerAddress];
+                const balanceAfter = await mockStablecoin.balanceOf(playerAddress);
+                const expectedPayout = expectedPayouts[playerAddress] || 0n;
+                const expectedBalanceAfter = balanceBefore + expectedPayout;
 
-    //             console.log(`    Player ${playerAddress}:`);
-    //             console.log(`      Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //             console.log(`      Expected Payout: ${ethers.formatUnits(expectedPayout, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //             console.log(`      Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol} (Expected: ${ethers.formatUnits(expectedBalanceAfter, stablecoinDecimals)})`);
-    //             if (balanceAfter !== expectedBalanceAfter) {
-    //                 console.warn(`      ⚠️ Stablecoin balance mismatch!`);
-    //             }
-    //         }
+                console.log(`    Player ${playerAddress}:`);
+                console.log(`      Balance Before: ${ethers.formatUnits(balanceBefore, stablecoinDecimals)} ${stablecoinSymbol}`);
+                console.log(`      Expected Payout: ${ethers.formatUnits(expectedPayout, stablecoinDecimals)} ${stablecoinSymbol}`);
+                console.log(`      Balance After:  ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol} (Expected: ${ethers.formatUnits(expectedBalanceAfter, stablecoinDecimals)})`);
+                if (balanceAfter !== expectedBalanceAfter) {
+                    console.warn(`      ⚠️ Stablecoin balance mismatch!`);
+                }
+            }
 
-    //         // Verify Bond Token Balances of Redeemers (should be 0 for redeemed bonds)
-    //         console.log("\n  Verifying Redeemer Bond Token Balances:");
-    //         for (let i = 0; i < bondIdsToRedeemFor.length; i++) {
-    //             const bondId = bondIdsToRedeemFor[i];
-    //             const bondIdStr = bondId.toString();
-    //             const bondInstance = createdBondInstances[bondIdStr];
-    //             const redeemers = redeemersPerBond[i];
+            // Verify Bond Token Balances of Redeemers (should be 0 for redeemed bonds)
+            console.log("\n  Verifying Redeemer Bond Token Balances:");
+            for (let i = 0; i < bondIdsToRedeemFor.length; i++) {
+                const bondId = bondIdsToRedeemFor[i];
+                const bondIdStr = bondId.toString();
+                const bondInstance = createdBondInstances[bondIdStr];
+                const redeemers = redeemersPerBond[i];
 
-    //             if (bondInstance) {
-    //                 console.log(`    Checking Bond ID ${bondId}:`);
-    //                 for (const redeemerAddress of redeemers) {
-    //                     const balanceAfter = await bondInstance.balanceOf(redeemerAddress);
-    //                     console.log(`      Redeemer ${redeemerAddress} Balance: ${balanceAfter.toString()} (Expected: 0)`);
-    //                     if (balanceAfter !== 0n) {
-    //                         console.warn(`      ⚠️ Bond token balance not zero after redemption!`);
-    //                     }
-    //                 }
-    //             }
-    //         }
+                if (bondInstance) {
+                    console.log(`    Checking Bond ID ${bondId}:`);
+                    for (const redeemerAddress of redeemers) {
+                        const balanceAfter = await bondInstance.balanceOf(redeemerAddress);
+                        console.log(`      Redeemer ${redeemerAddress} Balance: ${balanceAfter.toString()} (Expected: 0)`);
+                        if (balanceAfter !== 0n) {
+                            console.warn(`      ⚠️ Bond token balance not zero after redemption!`);
+                        }
+                    }
+                }
+            }
 
-    //          // Optional: Verify Stablecoin Balances of Bond Contracts
-    //          console.log("\n  Verifying Bond Contract Stablecoin Balances (Should decrease):");
-    //          // Need balances *before* redemption if exact decrease check is desired
-    //          for (const bondId of bondIdsToRedeemFor) {
-    //              const bondIdStr = bondId.toString();
-    //              const bondInstance = createdBondInstances[bondIdStr];
-    //              if (bondInstance) {
-    //                  const bondAddress = await bondInstance.getAddress();
-    //                  const balanceAfter = await mockStablecoin.balanceOf(bondAddress);
-    //                  console.log(`    Bond ID ${bondId} (${bondAddress}) Balance: ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
-    //              }
-    //          }
+             // Optional: Verify Stablecoin Balances of Bond Contracts
+             console.log("\n  Verifying Bond Contract Stablecoin Balances (Should decrease):");
+             // Need balances *before* redemption if exact decrease check is desired
+             for (const bondId of bondIdsToRedeemFor) {
+                 const bondIdStr = bondId.toString();
+                 const bondInstance = createdBondInstances[bondIdStr];
+                 if (bondInstance) {
+                     const bondAddress = await bondInstance.getAddress();
+                     const balanceAfter = await mockStablecoin.balanceOf(bondAddress);
+                     console.log(`    Bond ID ${bondId} (${bondAddress}) Balance: ${ethers.formatUnits(balanceAfter, stablecoinDecimals)} ${stablecoinSymbol}`);
+                 }
+             }
 
-    //     } catch (error) {
-    //         console.error(`  ❌ Error calling multiRedeemBonds:`, error.reason || error);
-    //         if (!error.reason) console.error(error);
-    //     }
-    // }
-    // console.log("\n--- Bond Redemptions Complete ---");
-    // console.log("====================================================");
+        } catch (error) {
+            console.error(`  ❌ Error calling multiRedeemBonds:`, error.reason || error);
+            if (!error.reason) console.error(error);
+        }
+    }
+    console.log("\n--- Bond Redemptions Complete ---");
+    console.log("====================================================");
 
     console.log("\n=== Script Execution Complete ===");
     console.log("====================================================");
